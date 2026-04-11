@@ -3,7 +3,7 @@ import { extractBlockTensors } from '../../src/inference/block-extractor'
 import { GGUFHeader, GGUFTensorInfo, GGMLType, GGUFValueType } from '../../src/inference/types'
 
 function makeTensor(name: string): GGUFTensorInfo {
-  return { name, shape: [4096n, 4096n], type: GGMLType.Q4_K_M, dataOffset: 0n }
+  return { name, shape: [4096n, 4096n], type: GGMLType.Q4_K, dataOffset: 0n }
 }
 
 function makeHeader(tensorNames: string[]): GGUFHeader {
@@ -12,6 +12,7 @@ function makeHeader(tensorNames: string[]): GGUFHeader {
     tensorCount: BigInt(tensorNames.length),
     metadata: [{ key: 'general.architecture', valueType: GGUFValueType.STRING, value: 'llama' }],
     tensors: tensorNames.map(makeTensor),
+    metadataEndOffset: 100,
     dataRegionOffset: 1024n
   }
 }

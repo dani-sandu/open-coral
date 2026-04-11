@@ -16,6 +16,16 @@
     "out": "native/build"
   },
   "dependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@libp2p/identify": "^4.1.0",
+    "@libp2p/kad-dht": "^16.2.0",
+    "@libp2p/peer-id": "^6.0.6",
+    "@libp2p/ping": "^3.1.0",
+    "@libp2p/tcp": "^11.0.15",
+    "@multiformats/multiaddr": "^13.0.1",
+    "libp2p": "^3.2.0",
+    "multiformats": "^13.4.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
@@ -29,6 +39,6 @@
     "electron-vite": "^5.0.0",
     "node-addon-api": "^8.7.0",
     "typescript": "^6.0.2",
-    "vite": "^7.0.0"
+    "vite": "6"
   }
 }

@@ -1,38 +1,35 @@
-/** GGML quantization / tensor types as defined in the GGUF spec */
+/** GGML quantization / tensor types as defined in ggml.h */
 export enum GGMLType {
   F32 = 0,
   F16 = 1,
   Q4_0 = 2,
   Q4_1 = 3,
+  // 4, 5 removed (Q4_2, Q4_3)
   Q5_0 = 6,
   Q5_1 = 7,
   Q8_0 = 8,
   Q8_1 = 9,
   Q2_K = 10,
-  Q3_K_S = 11,
-  Q3_K_M = 12,
-  Q3_K_L = 13,
-  Q4_K_S = 14,
-  Q4_K_M = 15,
-  Q5_K_S = 16,
-  Q5_K_M = 17,
-  Q6_K = 18,
-  Q8_K = 19,
-  IQ2_XXS = 20,
-  IQ2_XS = 21,
-  IQ3_XXS = 22,
-  IQ1_S = 23,
-  IQ4_NL = 24,
-  IQ3_S = 25,
-  IQ2_S = 26,
-  IQ4_XS = 27,
-  I8 = 28,
-  I16 = 29,
-  I32 = 30,
-  I64 = 31,
-  F64 = 32,
-  IQ1_M = 33,
-  BF16 = 34,
+  Q3_K = 11,
+  Q4_K = 12,
+  Q5_K = 13,
+  Q6_K = 14,
+  Q8_K = 15,
+  IQ2_XXS = 16,
+  IQ2_XS = 17,
+  IQ3_XXS = 18,
+  IQ1_S = 19,
+  IQ4_NL = 20,
+  IQ3_S = 21,
+  IQ2_S = 22,
+  IQ4_XS = 23,
+  I8 = 24,
+  I16 = 25,
+  I32 = 26,
+  I64 = 27,
+  F64 = 28,
+  IQ1_M = 29,
+  BF16 = 30,
 }
 
 /** GGUF metadata value types */
@@ -75,6 +72,8 @@ export interface GGUFHeader {
   tensorCount: bigint
   metadata: GGUFMetadataEntry[]
   tensors: GGUFTensorInfo[]
+  /** Byte offset where metadata KV section ends (= start of tensor info) */
+  metadataEndOffset: number
   /** Byte offset where tensor data begins (after header + tensor info) */
   dataRegionOffset: bigint
 }

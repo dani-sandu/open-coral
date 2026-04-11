@@ -112,6 +112,8 @@ export function parseGGUFHeader(buf: Buffer): GGUFHeader {
     metadata.push({ key, valueType, value })
   }
 
+  const metadataEndOffset = reader.position
+
   // Tensor info
   const tensors: GGUFTensorInfo[] = []
   for (let i = 0; i < Number(tensorCount); i++) {
@@ -128,5 +130,5 @@ export function parseGGUFHeader(buf: Buffer): GGUFHeader {
   reader.alignTo(32)
   const dataRegionOffset = BigInt(reader.position)
 
-  return { version, tensorCount, metadata, tensors, dataRegionOffset }
+  return { version, tensorCount, metadata, tensors, metadataEndOffset, dataRegionOffset }
 }

@@ -75,7 +75,12 @@ ModelContext* model_context_load(
     gparams.ctx      = &wctx;
 
     gguf_context* gctx = gguf_init_from_file(model_path, gparams);
-    if (!gctx) throw std::runtime_error("Failed to parse GGUF header");
+    if (!gctx) {
+        std::string msg = "Failed to parse GGUF header for: ";
+        msg += model_path;
+        msg += " (file size: " + std::to_string(fsize) + " bytes)";
+        throw std::runtime_error(msg);
+    }
     struct GufGuard { gguf_context* g; ~GufGuard() { if (g) gguf_free(g); } } gctx_guard{gctx};
     if (!wctx) { throw std::runtime_error("gguf_init did not create ggml context"); }
     struct GmlGuard { ggml_context* g; ~GmlGuard() { if (g) ggml_free(g); } } wctx_guard{wctx};
