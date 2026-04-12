@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createCoralNode, type CoralNode } from '../../src/p2p/node'
-import { announceBlocks, findPeersForBlocks, clearBlocks } from '../../src/p2p/dht'
+import { announceBlocks, findPeerForBlock, clearBlocks } from '../../src/p2p/dht'
 
 describe('DHT block announcements', () => {
   let nodeA: CoralNode
@@ -24,17 +24,17 @@ describe('DHT block announcements', () => {
     await expect(announceBlocks(nodeA.libp2p, 0, 7)).resolves.toBeUndefined()
   })
 
-  it('findPeersForBlocks() returns the announcing peer', async () => {
+  it('findPeerForBlock() returns the announcing peer', async () => {
     await announceBlocks(nodeA.libp2p, 8, 15)
     // Give provider record time to propagate
     await new Promise(r => setTimeout(r, 200))
-    const peers = await findPeersForBlocks(nodeB.libp2p, 8, 15)
+    const peers = await findPeerForBlock(nodeB.libp2p, 10)
     const peerIds = peers.map(p => p.peerId)
     expect(peerIds).toContain(nodeA.peerId)
   })
 
-  it('findPeersForBlocks() returns empty for unannounced range', async () => {
-    const peers = await findPeersForBlocks(nodeB.libp2p, 100, 107)
+  it('findPeerForBlock() returns empty for unannounced block', async () => {
+    const peers = await findPeerForBlock(nodeB.libp2p, 100)
     expect(peers).toHaveLength(0)
   })
 })

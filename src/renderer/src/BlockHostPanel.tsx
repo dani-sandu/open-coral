@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
+import type { ModelInfo, HostingState } from './types'
 
 const C = {
   surface: '#181825', border: '#313244',

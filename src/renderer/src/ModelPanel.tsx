@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
+import type { ModelInfo, HFModelResult, HFFileInfo, HFModelPreview, DownloadProgress, BlockEstimate } from './types'
 
 const C = {
   bg: '#1e1e2e', surface: '#181825', border: '#313244',

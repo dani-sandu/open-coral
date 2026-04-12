@@ -10,18 +10,19 @@ export interface PeerBlockInfo {
   multiaddrs: string[]
 }
 
-/** Deterministic CID for a block range, used as the DHT content-routing key. */
-async function blockRangeCID(start: number, end: number): Promise<CID> {
-  const key = new TextEncoder().encode(`coral/blocks/${start}-${end}`)
+/** Deterministic CID for a single block index, used as the DHT content-routing key. */
+async function singleBlockCID(index: number): Promise<CID> {
+  const key = new TextEncoder().encode(`coral/block/${index}`)
   const hash = await sha256.digest(key)
   return CID.createV1(RAW, hash)
 }
 
 /**
  * Announce to the DHT that this node hosts transformer blocks [start, end].
- * Other nodes can discover this peer by querying the same range.
+ * Publishes a separate provider record for each block index so that
+ * per-block lookups resolve in O(1) instead of requiring O(N²) range scans.
  *
- * Best-effort: the provider record is stored locally even if the DHT query
+ * Best-effort: provider records are stored locally even if the DHT query
  * times out before reaching remote peers (common in small networks).
  */
 export async function announceBlocks(
@@ -29,26 +30,32 @@ export async function announceBlocks(
   start: number,
   end: number,
 ): Promise<void> {
-  const cid = await blockRangeCID(start, end)
-  const signal = AbortSignal.timeout(5000)
-  try {
-    await libp2p.contentRouting.provide(cid, { signal })
-  } catch (err: unknown) {
-    // signal.aborted = our own timeout (record still stored locally) — OK
-    if (!signal.aborted) throw err
+  const promises: Promise<void>[] = []
+  for (let i = start; i <= end; i++) {
+    promises.push(
+      (async () => {
+        const cid = await singleBlockCID(i)
+        const signal = AbortSignal.timeout(5000)
+        try {
+          await libp2p.contentRouting.provide(cid, { signal })
+        } catch (err: unknown) {
+          if (!signal.aborted) throw err
+        }
+      })(),
+    )
   }
+  await Promise.all(promises)
 }
 
 /**
- * Find peers in the DHT that have announced hosting blocks [start, end].
+ * Find peers in the DHT that host a specific block index.
  * Returns up to 20 results. Times out after 5 seconds with empty array.
  */
-export async function findPeersForBlocks(
+export async function findPeerForBlock(
   libp2p: Libp2p,
-  start: number,
-  end: number,
+  index: number,
 ): Promise<PeerBlockInfo[]> {
-  const cid = await blockRangeCID(start, end)
+  const cid = await singleBlockCID(index)
   const results: PeerBlockInfo[] = []
   const signal = AbortSignal.timeout(5000)
   try {
@@ -60,7 +67,6 @@ export async function findPeersForBlocks(
       if (results.length >= 20) break
     }
   } catch (err: unknown) {
-    // signal.aborted is true when our own timeout fired (TimeoutError) — return partial results
     if (!signal.aborted) throw err
   }
   return results

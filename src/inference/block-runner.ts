@@ -57,6 +57,50 @@ export class BlockRunner {
     return getNative().runForward(this._handle, input, nTokens)
   }
 
+  /**
+   * Look up token embeddings from the embedding weight matrix.
+   * Only available when blockStart === 0 (embedding tensor loaded).
+   */
+  embedTokens(tokenIds: Int32Array): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().embedTokens(this._handle, tokenIds)
+  }
+
+  /**
+   * Apply final RMS norm and project hidden states to vocabulary logits.
+   * Only available when blockEnd === last block (output tensors loaded).
+   *
+   * @returns Float32Array of length nTokens × vocabSize
+   */
+  projectToLogits(hidden: Float32Array, nTokens: number): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().projectToLogits(this._handle, hidden, nTokens)
+  }
+
+  /** Vocabulary size from the native model context. */
+  get vocabSize(): number {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().getVocabSize(this._handle)
+  }
+
+  /** Allocate a KV cache session for up to maxLength tokens. */
+  openSession(maxLength: number): number {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().openSession(this._handle, maxLength)
+  }
+
+  /** Free a KV cache session. */
+  closeSession(sessionId: number): void {
+    if (this._disposed) return
+    getNative().closeSession(this._handle, sessionId)
+  }
+
+  /** Forward pass with KV caching — only processes nNewTokens new tokens. */
+  sessionForward(sessionId: number, input: Float32Array, nNewTokens: number): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().sessionForward(this._handle, sessionId, input, nNewTokens)
+  }
+
   /** Release native resources. Safe to call multiple times. */
   dispose(): void {
     if (!this._disposed) {

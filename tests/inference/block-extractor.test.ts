@@ -47,8 +47,20 @@ describe('extractBlockTensors', () => {
 
   it('includes output tensors when total block count matches model', () => {
     const header = makeHeader(tensorNames)
-    // 3 blocks total (0,1,2), range covers last block
+    // 3 blocks total (0,1,2), range covers last block but not block 0.
+    // token_embd.weight is also included as a weight-tying fallback for
+    // models where output.weight doesn't exist (e.g. Gemma).
     const result = extractBlockTensors(header, { start: 2, end: 2 }, 3)
+    expect(result.outputTensors.map(t => t.name)).toEqual([
+      'token_embd.weight', 'output_norm.weight', 'output.weight',
+    ])
+  })
+
+  it('does not include token_embd in outputTensors when also hosting block 0', () => {
+    const header = makeHeader(tensorNames)
+    // Range covers both first and last block — embedding goes to embeddingTensor, not outputTensors
+    const result = extractBlockTensors(header, { start: 0, end: 2 }, 3)
+    expect(result.embeddingTensor?.name).toBe('token_embd.weight')
     expect(result.outputTensors.map(t => t.name)).toEqual(['output_norm.weight', 'output.weight'])
   })
 

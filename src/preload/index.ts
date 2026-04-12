@@ -17,9 +17,10 @@ contextBridge.exposeInMainWorld('coral', {
   stopHosting: () => ipcRenderer.invoke('coral:stop-hosting'),
   getHostingState: () => ipcRenderer.invoke('coral:get-hosting-state'),
 
-  // Inference demo
-  runInferenceDemo: (nTokens: number) =>
-    ipcRenderer.invoke('coral:run-inference-demo', nTokens),
+  // Coverage & inference
+  checkCoverage: () => ipcRenderer.invoke('coral:check-coverage'),
+  runInference: (prompt: string, nTokens: number) =>
+    ipcRenderer.invoke('coral:run-inference', prompt, nTokens),
 
   // Hugging Face
   hfSearch: (query: string) => ipcRenderer.invoke('coral:hf-search', query),
@@ -34,4 +35,9 @@ contextBridge.exposeInMainWorld('coral', {
     ipcRenderer.invoke('coral:hf-estimate-blocks', blockStart, blockEnd),
   hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) =>
     ipcRenderer.invoke('coral:hf-download-partial', repoId, filename, blockStart, blockEnd),
+
+  // Network model discovery
+  discoverNetworkModels: () => ipcRenderer.invoke('coral:discover-network-models'),
+  loadModelByHFIdentity: (repoId: string, hfFilename: string) =>
+    ipcRenderer.invoke('coral:load-model-by-hf-identity', repoId, hfFilename),
 })

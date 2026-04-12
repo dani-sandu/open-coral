@@ -18,6 +18,25 @@ static float meta_f32(gguf_context* g, const char* key, float def = 0.0f) {
     return (i >= 0) ? gguf_get_val_f32(g, i) : def;
 }
 
+static std::string meta_str(gguf_context* g, const char* key, const char* def = "") {
+    int64_t i = gguf_find_key(g, key);
+    return (i >= 0) ? gguf_get_val_str(g, i) : def;
+}
+
+/** Read a u32 metadata value, trying the architecture-specific key first,
+ *  then falling back to llama.* for compatibility. */
+static int32_t arch_u32(gguf_context* g, const std::string& arch, const char* suffix, int32_t def = 0) {
+    int32_t v = meta_u32(g, (arch + "." + suffix).c_str(), -1);
+    if (v != -1) return v;
+    return meta_u32(g, (std::string("llama.") + suffix).c_str(), def);
+}
+
+static float arch_f32(gguf_context* g, const std::string& arch, const char* suffix, float def = 0.0f) {
+    float v = meta_f32(g, (arch + "." + suffix).c_str(), -1.0f);
+    if (v != -1.0f) return v;
+    return meta_f32(g, (std::string("llama.") + suffix).c_str(), def);
+}
+
 // ── Tensor lookup + data pointer fixup ────────────────────────────────────────
 // Finds tensor by name in ggml_context (created by gguf_init), then sets its
 // .data to point into file_buf at the correct offset (zero-copy).
@@ -97,16 +116,32 @@ ModelContext* model_context_load(
     uint8_t* fb = mc->file_buf.data();
 
     // 3. Read model config from GGUF metadata
-    mc->config.n_embd         = meta_u32(gctx, "llama.embedding_length");
-    mc->config.n_head         = meta_u32(gctx, "llama.attention.head_count");
-    mc->config.n_kv_head      = meta_u32(gctx, "llama.attention.head_count_kv");
-    mc->config.n_ff           = meta_u32(gctx, "llama.feed_forward_length");
-    mc->config.rms_norm_eps   = meta_f32(gctx, "llama.attention.layer_norm_rms_epsilon", 1e-5f);
-    mc->config.rope_freq_base = meta_f32(gctx, "llama.rope.freq_base", 10000.0f);
+    std::string arch = meta_str(gctx, "general.architecture", "llama");
+    mc->config.n_embd         = arch_u32(gctx, arch, "embedding_length");
+    mc->config.n_head         = arch_u32(gctx, arch, "attention.head_count");
+    mc->config.n_kv_head      = arch_u32(gctx, arch, "attention.head_count_kv");
+    mc->config.n_ff           = arch_u32(gctx, arch, "feed_forward_length");
+    mc->config.rms_norm_eps   = arch_f32(gctx, arch, "attention.layer_norm_rms_epsilon", 1e-5f);
+    mc->config.rope_freq_base = arch_f32(gctx, arch, "rope.freq_base", 10000.0f);
+
+    // Architecture-specific flags
+    bool is_gemma = (arch == "gemma" || arch == "gemma2");
+    if (is_gemma) {
+        mc->config.embed_scale       = sqrtf((float)mc->config.n_embd);
+        mc->config.norm_weight_plus1 = true;
+    }
+    if (arch == "gemma2") {
+        // Gemma-2 2B uses logit soft-capping
+        mc->config.attn_logit_cap    = arch_f32(gctx, arch, "attn_logit_softcapping", 50.0f);
+        mc->config.final_logit_cap   = arch_f32(gctx, arch, "final_logit_softcapping", 30.0f);
+        mc->config.use_post_attn_norm = true;
+        mc->config.use_post_ffn_norm  = true;
+    }
 
     // 4. Load embedding tensor if we host block 0
     if (block_start == 0) {
         mc->embd_weight = find_and_bind(wctx, gctx, "token_embd.weight", fb, data_start);
+        if (mc->embd_weight) mc->config.n_vocab = (int32_t)mc->embd_weight->ne[1];
     }
 
     // 5. Load transformer block tensors
@@ -127,12 +162,29 @@ ModelContext* model_context_load(
         lw.ffn_gate  = B("ffn_gate.weight");
         lw.ffn_up    = B("ffn_up.weight");
         lw.ffn_down  = B("ffn_down.weight");
+        // Post-norms (Gemma-2)
+        if (mc->config.use_post_attn_norm) lw.post_attn_norm = B("post_attention_norm.weight");
+        if (mc->config.use_post_ffn_norm)  lw.post_ffn_norm  = B("post_ffw_norm.weight");
     }
 
     // 6. Load output tensors if we host the last block
     if (block_end == total_blocks - 1) {
         mc->output_norm = find_and_bind(wctx, gctx, "output_norm.weight", fb, data_start);
         mc->output_wt   = find_and_bind(wctx, gctx, "output.weight",      fb, data_start);
+
+        // Weight tying: many models (Gemma, etc.) share token_embd.weight as
+        // the output projection — no separate output.weight tensor exists.
+        if (!mc->output_wt && mc->embd_weight) {
+            mc->output_wt = mc->embd_weight;
+        }
+        // If we don't host block 0, embd_weight wasn't loaded yet — load it now
+        // solely for the output projection.
+        if (!mc->output_wt) {
+            mc->output_wt = find_and_bind(wctx, gctx, "token_embd.weight", fb, data_start);
+        }
+
+        if (mc->output_wt && mc->config.n_vocab == 0)
+            mc->config.n_vocab = (int32_t)mc->output_wt->ne[1];
     }
 
     // gctx_guard fires here and frees gctx (mc does not own it)
@@ -143,6 +195,8 @@ ModelContext* model_context_load(
 
 void model_context_free(ModelContext* mc) {
     if (!mc) return;
+    for (auto& pair : mc->sessions) delete pair.second;
+    mc->sessions.clear();
     if (mc->weight_ctx) ggml_free(mc->weight_ctx);
     delete mc;
 }

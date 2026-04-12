@@ -5,3 +5,4 @@ native/build/
 native/_deps/
 .superpowers/
 *.gguf
+.worktrees/

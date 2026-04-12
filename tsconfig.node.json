@@ -10,5 +10,5 @@
     "outDir": "dist/main",
     "rootDir": "src"
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/inference/**/*"]
+  "include": ["src/main/**/*", "src/preload/**/*", "src/inference/**/*", "src/p2p/**/*"]
 }

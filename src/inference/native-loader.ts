@@ -8,6 +8,12 @@ export interface CoralNative {
   loadBlockRange(modelPath: string, blockStart: number, blockEnd: number, totalBlocks: number): number
   runForward(handle: number, input: Float32Array, nTokens: number): Float32Array
   freeBlockRange(handle: number): void
+  embedTokens(handle: number, tokenIds: Int32Array): Float32Array
+  projectToLogits(handle: number, hidden: Float32Array, nTokens: number): Float32Array
+  getVocabSize(handle: number): number
+  openSession(handle: number, maxLength: number): number
+  closeSession(handle: number, sessionId: number): void
+  sessionForward(handle: number, sessionId: number, input: Float32Array, nNewTokens: number): Float32Array
 }
 
 let _cached: CoralNative | null = null

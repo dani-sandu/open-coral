@@ -2,71 +2,8 @@ import React, { useState } from 'react'
 import NetworkView from './NetworkView'
 import ModelPanel from './ModelPanel'
 import BlockHostPanel from './BlockHostPanel'
-import InferencePanel from './InferencePanel'
-
-// ── Types shared between main and renderer ─────────────────────────────────────
-
-interface ModelInfo {
-  path: string; architecture: string; totalBlocks: number
-  hiddenSize: number; headCount: number; fileSizeBytes: number
-}
-interface HostingState {
-  modelPath: string; blockStart: number; blockEnd: number
-  totalBlocks: number; hiddenSize: number
-}
-interface InferenceDemoResult {
-  nTokens: number; nEmbd: number
-  chainSteps: { peerId: string; blockStart: number; blockEnd: number; durationMs: number }[]
-  totalDurationMs: number; outputNorm: number
-}
-interface NetworkState {
-  localPeerId: string; localMultiaddrs: string[]
-  localBlocks: { start: number; end: number }[]
-  peers: { peerId: string; multiaddrs: string[]; blockRanges: { start: number; end: number }[]; isLocal: boolean; connected: boolean }[]
-  connections: { from: string; to: string }[]
-  timestamp: number
-}
-
-declare global {
-  interface Window {
-    coral: {
-      version: () => string
-      getNetworkState: () => Promise<NetworkState | null>
-      selectModel: () => Promise<ModelInfo | null>
-      loadModelPath: (filePath: string) => Promise<ModelInfo>
-      getModel: () => Promise<ModelInfo | null>
-      startHosting: (blockStart: number, blockEnd: number) => Promise<void>
-      stopHosting: () => Promise<void>
-      getHostingState: () => Promise<HostingState | null>
-      runInferenceDemo: (nTokens: number) => Promise<InferenceDemoResult>
-      hfSearch: (query: string) => Promise<HFModelResult[]>
-      hfListFiles: (repoId: string) => Promise<HFFileInfo[]>
-      hfDownload: (repoId: string, filename: string) => Promise<string>
-      hfDownloadProgress: () => Promise<DownloadProgress | null>
-      hfCancelDownload: () => Promise<void>
-      hfPreviewModel: (repoId: string, filename: string) => Promise<HFModelPreview>
-      hfEstimateBlocks: (blockStart: number, blockEnd: number) => Promise<BlockEstimate>
-      hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) => Promise<string>
-    }
-  }
-}
-
-interface HFModelResult {
-  id: string; author: string; modelId: string
-  likes: number; downloads: number; tags: string[]; lastModified: string
-}
-interface HFFileInfo { rfilename: string; size: number }
-interface DownloadProgress {
-  file: string; downloadedBytes: number; totalBytes: number
-  percent: number; done: boolean; error?: string; localPath?: string
-}
-interface HFModelPreview {
-  architecture: string; totalBlocks: number; hiddenSize: number
-  headCount: number; fullFileSize: number; repoId: string; filename: string
-}
-interface BlockEstimate {
-  partialSize: number; fullSize: number; savedPercent: number
-}
+import ChatPanel from './ChatPanel'
+import './types'
 
 // ── Shared color palette ───────────────────────────────────────────────────────
 
@@ -75,13 +12,13 @@ const C = {
   text: '#cdd6f4', dim: '#6c7086', accent: '#7c6af7',
 }
 
-type Tab = 'network' | 'model' | 'blocks' | 'inference'
+type Tab = 'network' | 'model' | 'blocks' | 'chat'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'model', label: 'Model' },
   { id: 'blocks', label: 'Blocks' },
-  { id: 'inference', label: 'Inference' },
+  { id: 'chat', label: 'Chat' },
 ]
 
 export default function App(): React.JSX.Element {
@@ -130,7 +67,7 @@ export default function App(): React.JSX.Element {
         {tab === 'network' && <NetworkView />}
         {tab === 'model' && <ModelPanel />}
         {tab === 'blocks' && <BlockHostPanel />}
-        {tab === 'inference' && <InferencePanel />}
+        {tab === 'chat' && <ChatPanel />}
       </div>
     </div>
   )

@@ -126,5 +126,34 @@ describe('SequenceManager', () => {
     })
 
     await expect(mgr.planChain()).rejects.toThrow('No peer found')
+  }, 15000)
+
+  it('checkCoverage() reports full coverage when both blocks are hosted', async () => {
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: runnerA,
+      totalBlocks: TINY_CONFIG.n_blocks,
+      hiddenSize: TINY_CONFIG.n_embd,
+    })
+
+    const report = await mgr.checkCoverage()
+    expect(report.complete).toBe(true)
+    expect(report.missing).toHaveLength(0)
+    expect(report.covered.some(c => c.peerId === 'local')).toBe(true)
+    expect(report.covered.length).toBe(2)
   })
+
+  it('checkCoverage() reports missing when totalBlocks exceeds available coverage', async () => {
+    // Block index TINY_CONFIG.n_blocks (=2) has no peer — only blocks 0 and 1 are hosted
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: runnerA,
+      totalBlocks: TINY_CONFIG.n_blocks + 1,
+      hiddenSize: TINY_CONFIG.n_embd,
+    })
+
+    const report = await mgr.checkCoverage()
+    expect(report.complete).toBe(false)
+    expect(report.missing).toContain(TINY_CONFIG.n_blocks)
+  }, 15000)
 })

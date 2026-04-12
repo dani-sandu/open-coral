@@ -39,7 +39,6 @@ export interface HFModelPreview {
   totalBlocks: number
   hiddenSize: number
   headCount: number
-  fullFileSize: number
   repoId: string
   filename: string
 }
@@ -217,6 +216,9 @@ export function setupHuggingFaceIPC(): void {
     try {
       const localPath = await promise
       activeDownload = null
+      // Write HF identity sidecar
+      const fullMeta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null }
+      writeFileSync(localPath + '.coral-meta.json', JSON.stringify(fullMeta, null, 2), 'utf-8')
       return localPath
     } catch (err) {
       activeDownload = null
@@ -275,7 +277,7 @@ export function setupHuggingFaceIPC(): void {
 
     return {
       architecture, totalBlocks, hiddenSize, headCount,
-      fullFileSize: 0, repoId, filename,
+      repoId, filename,
     }
   })
 
@@ -362,6 +364,10 @@ export function setupHuggingFaceIPC(): void {
       // Build partial GGUF
       const partialBuf = buildPartialGGUF(headerBuf, header, selectedTensors, tensorDataChunks)
       writeFileSync(localPath, partialBuf)
+
+      // Write HF identity sidecar
+      const meta = { repoId, hfFilename: filename, blockStart, blockEnd }
+      writeFileSync(localPath + '.coral-meta.json', JSON.stringify(meta, null, 2), 'utf-8')
 
       lastProgress = { file: partialName, downloadedBytes: downloaded, totalBytes: totalDownload, percent: 100, done: true, localPath }
       activeDownload = null

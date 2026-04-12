@@ -50,6 +50,6 @@ export async function createCoralNode(opts: CoralNodeOptions = {}): Promise<Cora
     get peerId() { return libp2p.peerId.toString() },
     get multiaddrs() { return libp2p.getMultiaddrs().map(a => a.toString()) },
     get libp2p() { return libp2p },
-    stop: () => libp2p.stop(),
+    stop: async () => { await libp2p.stop() },
   }
 }
