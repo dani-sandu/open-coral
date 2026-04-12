@@ -137,12 +137,16 @@ export class SequenceManager {
   private async discoverRemoteBlocks(): Promise<Map<number, PeerBlockInfo>> {
     const blockPeers = new Map<number, PeerBlockInfo>()
     const queries: Promise<void>[] = []
+    const selfId = this.node.peerId
 
     for (let i = 0; i < this.totalBlocks; i++) {
       if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
       queries.push(
         findPeerForBlock(this.node.libp2p, i)
-          .then(peers => { if (peers.length > 0) blockPeers.set(i, peers[0]) })
+          .then(peers => {
+            const remote = peers.filter(p => p.peerId !== selfId)
+            if (remote.length > 0) blockPeers.set(i, remote[0])
+          })
           .catch(() => {}),
       )
     }
