@@ -63,6 +63,4 @@ target_compile_definitions(coral_native PRIVATE
 set_target_properties(coral_native PROPERTIES
   PREFIX  ""
   SUFFIX  ".node"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_JS_OUTDIR}"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_JS_OUTDIR}"
 )

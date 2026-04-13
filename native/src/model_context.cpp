@@ -1,6 +1,7 @@
 #include "model_context.h"
 #include "ggml.h"
 #include "gguf.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
