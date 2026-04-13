@@ -1,6 +1,6 @@
 import { createLibp2p, type Libp2p } from 'libp2p'
 import { tcp } from '@libp2p/tcp'
-import { noise } from '@chainsafe/libp2p-noise'
+import { noise, pureJsCrypto } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { kadDHT, passthroughMapper } from '@libp2p/kad-dht'
 import { identify } from '@libp2p/identify'
@@ -29,7 +29,10 @@ export async function createOpenCoralNode(opts: OpenCoralNodeOptions = {}): Prom
       listen: [`/ip4/0.0.0.0/tcp/${port}`],
     },
     transports: [tcp()],
-    connectionEncrypters: [noise()],
+    // pureJsCrypto uses @noble/ciphers (pure JS) for ChaCha20-Poly1305 instead of
+    // Node.js createCipheriv, which Bun and Electron both handle incorrectly for
+    // this cipher. Performance is identical in practice for our tensor payload sizes.
+    connectionEncrypters: [noise({ crypto: pureJsCrypto })],
     streamMuxers: [yamux()],
     services: {
       identify: identify(),

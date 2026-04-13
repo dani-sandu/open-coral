@@ -85,3 +85,56 @@ export async function clearBlocks(
   // Provider records expire automatically via DHT TTL (~24h).
   // cancelReprovide() is available in kad-dht v16 but not yet wired up.
 }
+
+// ── Single-record presence announcement ───────────────────────────────────────
+
+/** Deterministic CID representing the Coral P2P network. All Coral nodes provide
+ *  this CID so peers can discover each other with a single DHT query.
+ *  Cached after first computation — the key is static and the result never changes. */
+let _coralNetworkCID: Promise<CID> | undefined
+function coralNetworkCID(): Promise<CID> {
+  if (!_coralNetworkCID) {
+    _coralNetworkCID = (async () => {
+      const key = new TextEncoder().encode('coral/network/v1')
+      const hash = await sha256.digest(key)
+      return CID.createV1(RAW, hash)
+    })()
+  }
+  return _coralNetworkCID
+}
+
+/**
+ * Announce this node's presence on the Coral network with a single DHT record.
+ * Call this instead of (or in addition to) announceBlocks when hosting blocks.
+ */
+export async function announcePresence(libp2p: Libp2p): Promise<void> {
+  const cid = await coralNetworkCID()
+  const signal = AbortSignal.timeout(5000)
+  try {
+    await libp2p.contentRouting.provide(cid, { signal })
+  } catch (err: unknown) {
+    if (!signal.aborted) throw err
+  }
+}
+
+/**
+ * Find all Coral peers known to the DHT.
+ * Returns up to 20 results. Times out after 5 seconds with empty array.
+ */
+export async function findCoralPeers(libp2p: Libp2p): Promise<PeerBlockInfo[]> {
+  const cid = await coralNetworkCID()
+  const results: PeerBlockInfo[] = []
+  const signal = AbortSignal.timeout(5000)
+  try {
+    for await (const provider of libp2p.contentRouting.findProviders(cid, { signal })) {
+      results.push({
+        peerId: provider.id.toString(),
+        multiaddrs: provider.multiaddrs.map(a => a.toString()),
+      })
+      if (results.length >= 20) break
+    }
+  } catch (err: unknown) {
+    if (!signal.aborted) throw err
+  }
+  return results
+}

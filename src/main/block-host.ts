@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { AsyncBlockRunner } from '../inference/native-worker'
 import { BlockRegistry } from '../p2p/block-registry'
-import { registerInferenceHandler } from '../p2p/inference-protocol'
+import { registerInferenceHandler, registerInferenceHandlerV2 } from '../p2p/inference-protocol'
 import { registerKVHandler, openRemoteSession, forwardRemote, closeRemoteSession, type KVSessionHandler } from '../p2p/kv-protocol'
 import { getCurrentModel, getCurrentGGUFHeader } from './model-manager'
 import { SequenceManager, type ChainStepWithCandidates } from '../inference/sequence-manager'
@@ -10,6 +10,7 @@ import type { CoverageReport } from '../inference/coverage'
 import { createTokenizer, type Tokenizer } from '../inference/tokenizer'
 import { peerIdFromString } from '@libp2p/peer-id'
 import type { OpenCoralNode } from '../p2p/node'
+import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
 
 export interface HostingState {
   modelPath: string
@@ -132,12 +133,15 @@ export function setupBlockHostIPC(
       hiddenSize: model.hiddenSize,
     })
 
-    const registry = new BlockRegistry(node.libp2p, { blockStart, blockEnd })
+    const registry = new BlockRegistry(node.libp2p, {})
     await registry.start()
 
     await registerInferenceHandler(node.libp2p, async (input, nTokens) => {
       return runner.forward(input, nTokens)
     })
+    await registerInferenceHandlerV2(node.libp2p, async (input, nTokens) => {
+      return runner.forward(input, nTokens)
+    }, getNodeIdentity())
 
     // --- KV cache session handler ---
     const kvSessions = new Map<string, { sessionId: number; lastUsed: number }>()
@@ -248,6 +252,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       localRunner: activeHost.runner,
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
+      getPeerBlockRange,
+      latencyTracker: getLatencyTracker(),
     })
 
     const chain = await mgr.planChainWithCandidates()
@@ -389,6 +395,7 @@ export function setupCoverageIPC(getNode: () => OpenCoralNode | null): void {
       localRunner: activeHost?.runner ?? null,
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
+      getPeerBlockRange,
     })
 
     return mgr.checkCoverage()

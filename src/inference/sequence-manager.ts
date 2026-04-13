@@ -1,7 +1,8 @@
 import { peerIdFromString } from '@libp2p/peer-id'
 import { multiaddr } from '@multiformats/multiaddr'
 import type { OpenCoralNode } from '../p2p/node'
-import { findPeerForBlock, type PeerBlockInfo } from '../p2p/dht'
+import { findPeerForBlock, findCoralPeers, type PeerBlockInfo } from '../p2p/dht'
+import type { PeerLatencyTracker } from '../p2p/peer-latency'
 import { sendInferenceRequest } from '../p2p/inference-protocol'
 import { computeCoverage, type BlockCoverage, type CoverageReport } from './coverage'
 
@@ -44,6 +45,13 @@ export interface SequenceManagerOptions {
   localRunner: BlockRunnerLike | null
   totalBlocks: number
   hiddenSize: number
+  /**
+   * Callback to look up the block range a peer is hosting.
+   * Returns null if the peer's range is unknown (not yet queried via modelinfo).
+   */
+  getPeerBlockRange?: (peerId: string) => { blockStart: number; blockEnd: number } | null
+  /** Optional tracker for latency-aware peer selection. */
+  latencyTracker?: PeerLatencyTracker
 }
 
 /**
@@ -55,12 +63,16 @@ export class SequenceManager {
   private readonly localRunner: BlockRunnerLike | null
   private readonly totalBlocks: number
   private readonly hiddenSize: number
+  private readonly getPeerBlockRange: (peerId: string) => { blockStart: number; blockEnd: number } | null
+  private readonly latencyTracker: PeerLatencyTracker | null
 
   constructor(opts: SequenceManagerOptions) {
     this.node = opts.node
     this.localRunner = opts.localRunner
     this.totalBlocks = opts.totalBlocks
     this.hiddenSize = opts.hiddenSize
+    this.getPeerBlockRange = opts.getPeerBlockRange ?? (() => null)
+    this.latencyTracker = opts.latencyTracker ?? null
   }
 
   /**
@@ -140,6 +152,7 @@ export class SequenceManager {
         if (!isConnected && step.multiaddr) {
           await this.node.libp2p.dial(multiaddr(step.multiaddr))
         }
+        const t0 = Date.now()
         current = await sendInferenceRequest(
           this.node.libp2p,
           peerId,
@@ -147,6 +160,7 @@ export class SequenceManager {
           nTokens,
           this.hiddenSize,
         )
+        this.latencyTracker?.record(step.peerId, Date.now() - t0)
       }
     }
 
@@ -265,7 +279,7 @@ export class SequenceManager {
     for (const step of chain) {
       if (step.candidates[0].peerId === 'local') {
         if (!this.localRunner) throw new Error('SequenceManager: local step but no localRunner')
-        current = this.localRunner.forward(current, nTokens)
+        current = await this.localRunner.forward(current, nTokens)
         continue
       }
 
@@ -279,6 +293,7 @@ export class SequenceManager {
           if (!isConnected && candidate.multiaddr) {
             await this.node.libp2p.dial(multiaddr(candidate.multiaddr))
           }
+          const t0 = Date.now()
           current = await sendInferenceRequest(
             this.node.libp2p,
             peerId,
@@ -286,6 +301,7 @@ export class SequenceManager {
             nTokens,
             this.hiddenSize,
           )
+          this.latencyTracker?.record(candidate.peerId, Date.now() - t0)
           succeeded = true
           break
         } catch (err) {
@@ -303,27 +319,45 @@ export class SequenceManager {
   }
 
   /**
-   * Query the DHT for every non-local block index in parallel.
-   * Returns a map from block index → first responding peer.
+   * Find coral peers via a single DHT lookup, map each to their block range
+   * via the getPeerBlockRange callback, and build a block→best-peer map.
+   * Prefers peers with lower latency when multiple cover the same block.
    */
   private async discoverRemoteBlocks(): Promise<Map<number, PeerBlockInfo>> {
-    const blockPeers = new Map<number, PeerBlockInfo>()
-    const queries: Promise<void>[] = []
+    const coralPeers = await findCoralPeers(this.node.libp2p)
     const selfId = this.node.peerId
 
-    for (let i = 0; i < this.totalBlocks; i++) {
-      if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
-      queries.push(
-        findPeerForBlock(this.node.libp2p, i)
-          .then(peers => {
-            const remote = peers.filter(p => p.peerId !== selfId)
-            if (remote.length > 0) blockPeers.set(i, remote[0])
-          })
-          .catch(() => {}),
-      )
+    // Map: blockIndex → list of candidate PeerBlockInfos
+    const candidates = new Map<number, PeerBlockInfo[]>()
+
+    for (const peer of coralPeers) {
+      if (peer.peerId === selfId) continue
+
+      const range = this.getPeerBlockRange(peer.peerId)
+      if (!range) continue
+
+      for (let i = range.blockStart; i <= range.blockEnd; i++) {
+        // Skip blocks handled by local runner
+        if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
+
+        const list = candidates.get(i) ?? []
+        list.push(peer)
+        candidates.set(i, list)
+      }
     }
 
-    await Promise.all(queries)
+    // For each block, pick the best (lowest latency) candidate
+    const blockPeers = new Map<number, PeerBlockInfo>()
+    for (const [index, peers] of candidates) {
+      if (peers.length === 1) {
+        blockPeers.set(index, peers[0])
+      } else {
+        const bestId = this.latencyTracker?.bestPeer(peers.map(p => p.peerId)) ?? peers[0].peerId
+        const best = peers.find(p => p.peerId === bestId) ?? peers[0]
+        blockPeers.set(index, best)
+      }
+    }
+
     return blockPeers
   }
 

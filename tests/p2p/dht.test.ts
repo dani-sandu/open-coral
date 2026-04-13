@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
-import { announceBlocks, findPeerForBlock, clearBlocks } from '../../src/p2p/dht'
+import { announceBlocks, findPeerForBlock, clearBlocks, announcePresence, findCoralPeers } from '../../src/p2p/dht'
 
 describe('DHT block announcements', () => {
   let nodeA: OpenCoralNode
@@ -36,5 +36,46 @@ describe('DHT block announcements', () => {
   it('findPeerForBlock() returns empty for unannounced block', async () => {
     const peers = await findPeerForBlock(nodeB.libp2p, 100)
     expect(peers).toHaveLength(0)
+  })
+})
+
+describe('DHT presence announcement (single-record)', () => {
+  let nodeC: OpenCoralNode
+  let nodeD: OpenCoralNode
+
+  beforeAll(async () => {
+    nodeC = await createOpenCoralNode()
+    nodeD = await createOpenCoralNode()
+    await nodeC.libp2p.dial(nodeD.libp2p.getMultiaddrs()[0])
+    await new Promise(r => setTimeout(r, 300))
+  })
+
+  afterAll(async () => {
+    await nodeC.stop()
+    await nodeD.stop()
+  })
+
+  it('announcePresence() resolves without error', async () => {
+    await expect(announcePresence(nodeC.libp2p)).resolves.toBeUndefined()
+  })
+
+  it('findCoralPeers() returns the announcing peer', async () => {
+    await announcePresence(nodeC.libp2p)
+    await new Promise(r => setTimeout(r, 200))
+    const peers = await findCoralPeers(nodeD.libp2p)
+    const ids = peers.map(p => p.peerId)
+    expect(ids).toContain(nodeC.peerId)
+  })
+
+  it('findCoralPeers() returns empty when no peer has announced', async () => {
+    // Use fresh isolated nodes with no announcements
+    const e = await createOpenCoralNode()
+    const f = await createOpenCoralNode()
+    await e.libp2p.dial(f.libp2p.getMultiaddrs()[0])
+    await new Promise(r => setTimeout(r, 200))
+    const peers = await findCoralPeers(f.libp2p)
+    expect(peers).toHaveLength(0)
+    await e.stop()
+    await f.stop()
   })
 })
