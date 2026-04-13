@@ -31,15 +31,14 @@ function coverageDotColor(entry: NetworkModelEntry): string {
 export default function ModelSelector({ currentModel, onModelLoaded }: ModelSelectorProps): React.JSX.Element {
   const [models, setModels] = useState<NetworkModelEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
   const discover = useCallback(async () => {
     setLoading(true)
     try {
-      const results = await window.coral.discoverNetworkModels()
+      const results = await window.opencoral.discoverNetworkModels()
       setModels(results)
-      if (results.length > 0) setExpanded(true)
     } catch (e) {
       console.error('discoverNetworkModels failed:', e)
     } finally {
@@ -55,7 +54,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
     const id = entry.repoId + '/' + entry.hfFilename
     setLoadingId(id)
     try {
-      const model = await window.coral.loadModelByHFIdentity(entry.repoId, entry.hfFilename)
+      const model = await window.opencoral.loadModelByHFIdentity(entry.repoId, entry.hfFilename)
       onModelLoaded(model)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -128,7 +127,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {models.length === 0 && !loading && (
             <div style={{ color: C.dim, fontSize: 11, padding: '4px 0' }}>
-              No models found on the network.
+              No models found on the network. Load a model and start hosting in the Models tab, or connect to peers that are hosting.
             </div>
           )}
           {models.map(entry => {

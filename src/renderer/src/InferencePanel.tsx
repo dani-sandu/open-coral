@@ -22,7 +22,7 @@ export default function InferencePanel(): React.JSX.Element {
     setError(null)
     setResult(null)
     try {
-      const r = await window.coral.runInferenceDemo(nTokens)
+      const r = await window.opencoral.runInferenceDemo(nTokens)
       setResult(r)
     } catch (e) {
       setError(String(e))

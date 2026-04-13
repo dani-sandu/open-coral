@@ -6,3 +6,4 @@ native/_deps/
 .superpowers/
 *.gguf
 .worktrees/
+release/

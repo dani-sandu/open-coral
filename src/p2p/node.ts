@@ -6,7 +6,7 @@ import { kadDHT, passthroughMapper } from '@libp2p/kad-dht'
 import { identify } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
 
-export interface CoralNode {
+export interface OpenCoralNode {
   /** base58btc-encoded peer ID */
   readonly peerId: string
   /** listening multiaddrs as strings, e.g. ['/ip4/127.0.0.1/tcp/54321'] */
@@ -16,12 +16,12 @@ export interface CoralNode {
   stop(): Promise<void>
 }
 
-export interface CoralNodeOptions {
+export interface OpenCoralNodeOptions {
   /** TCP port to listen on. 0 = OS-assigned (default). */
   port?: number
 }
 
-export async function createCoralNode(opts: CoralNodeOptions = {}): Promise<CoralNode> {
+export async function createOpenCoralNode(opts: OpenCoralNodeOptions = {}): Promise<OpenCoralNode> {
   const port = opts.port ?? 0
 
   const libp2p = await createLibp2p({
@@ -36,7 +36,7 @@ export async function createCoralNode(opts: CoralNodeOptions = {}): Promise<Cora
       ping: ping(),
       dht: kadDHT({
         clientMode: false,
-        protocol: '/coral/kad/1.0.0',
+        protocol: '/opencoral/kad/1.0.0',
         // Keep private (127.x) addresses so local test peers enter the routing table.
         // The default removePrivateAddressesMapper strips them, leaving the table empty.
         peerInfoMapper: passthroughMapper,

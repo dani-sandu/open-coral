@@ -11,6 +11,14 @@ interface NetworkPeer {
   blockRanges: BlockRange[]
   isLocal: boolean
   connected: boolean
+  modelInfo?: {
+    repoId: string
+    hfFilename: string
+    blockStart: number
+    blockEnd: number
+    totalBlocks: number
+    architecture: string
+  }
 }
 
 interface NetworkConnection {
@@ -233,6 +241,32 @@ function PeerDetailPanel({ peer, color }: { peer: NetworkPeer; color: string }):
           ))}
         </div>
       )}
+      {peer.modelInfo && (
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${COLORS.border}` }}>
+          <div style={{ marginBottom: 3 }}>
+            <span style={{ color: COLORS.textDim }}>Model: </span>
+            <span style={{ color: COLORS.text, fontSize: 11 }}>
+              {peer.modelInfo.hfFilename.endsWith('.gguf')
+                ? peer.modelInfo.hfFilename.slice(0, -5)
+                : peer.modelInfo.hfFilename}
+            </span>
+          </div>
+          <div style={{ marginBottom: 3 }}>
+            <span style={{ color: COLORS.textDim }}>Repo: </span>
+            <span style={{ color: COLORS.textDim, fontSize: 10 }}>{peer.modelInfo.repoId}</span>
+          </div>
+          <div style={{ marginBottom: 3 }}>
+            <span style={{ color: COLORS.textDim }}>Arch: </span>
+            <span style={{ color: COLORS.text, fontSize: 11 }}>{peer.modelInfo.architecture}</span>
+          </div>
+          <div>
+            <span style={{ color: COLORS.textDim }}>Coverage: </span>
+            <span style={{ color: color, fontSize: 11 }}>
+              {peer.modelInfo.blockEnd - peer.modelInfo.blockStart + 1}/{peer.modelInfo.totalBlocks} blocks
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -245,7 +279,7 @@ export default function NetworkView(): React.JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const s = await window.coral.getNetworkState()
+      const s = await window.opencoral.getNetworkState()
       setState(s)
       setError(null)
     } catch (err) {
@@ -272,6 +306,11 @@ export default function NetworkView(): React.JSX.Element {
       border: `1px solid ${COLORS.border}`,
       padding: 20,
       fontFamily: 'system-ui',
+      display: 'flex',
+      flexDirection: 'column',
+      flex: 1,
+      minHeight: 0,
+      overflow: 'hidden',
     }}>
       {/* Title bar */}
       <div style={{
@@ -311,7 +350,7 @@ export default function NetworkView(): React.JSX.Element {
         <div style={{ color: COLORS.red, fontSize: 12, marginBottom: 8 }}>{error}</div>
       )}
 
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {/* SVG graph */}
         <svg
           viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
@@ -320,7 +359,6 @@ export default function NetworkView(): React.JSX.Element {
             background: COLORS.surface,
             borderRadius: 8,
             border: `1px solid ${COLORS.border}`,
-            minHeight: 400,
           }}
         >
           {/* Grid dots */}
@@ -395,8 +433,9 @@ export default function NetworkView(): React.JSX.Element {
               <tr style={{ borderBottom: `1px solid ${COLORS.border}`, color: COLORS.textDim }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Peer ID</th>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Type</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Address</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Model</th>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Blocks</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Address</th>
               </tr>
             </thead>
             <tbody>
@@ -414,8 +453,15 @@ export default function NetworkView(): React.JSX.Element {
                   >
                     <td style={{ padding: '6px 8px', color }}>{shortPeerId(peer.peerId)}</td>
                     <td style={{ padding: '6px 8px' }}>{peer.isLocal ? 'local' : 'remote'}</td>
-                    <td style={{ padding: '6px 8px', color: COLORS.textDim }}>
-                      {peer.multiaddrs[0] || '—'}
+                    <td style={{ padding: '6px 8px' }}>
+                      {peer.modelInfo
+                        ? <span style={{ color: COLORS.text }}>
+                            {peer.modelInfo.hfFilename.endsWith('.gguf')
+                              ? peer.modelInfo.hfFilename.slice(0, -5)
+                              : peer.modelInfo.hfFilename}
+                          </span>
+                        : <span style={{ color: COLORS.textDim }}>—</span>
+                      }
                     </td>
                     <td style={{ padding: '6px 8px' }}>
                       {peer.blockRanges.length > 0
@@ -424,6 +470,9 @@ export default function NetworkView(): React.JSX.Element {
                           ))
                         : <span style={{ color: COLORS.textDim }}>—</span>
                       }
+                    </td>
+                    <td style={{ padding: '6px 8px', color: COLORS.textDim }}>
+                      {peer.multiaddrs[0] || '—'}
                     </td>
                   </tr>
                 )

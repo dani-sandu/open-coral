@@ -1,6 +1,6 @@
-# Coral — Decentralized LLM Desktop Client
+# OpenCoral — Decentralized LLM Desktop Client
 
-Coral is an open-source attempt to build a **decentralized large language model network** as a modern desktop application. Inspired by [Petals](https://github.com/bigscience-workshop/petals), it splits transformer blocks across many machines and chains inference requests through them — but rebuilds the concept from scratch using a contemporary **TypeScript/Bun/Electron** stack, **GGUF** model format via [node-llama-cpp](https://github.com/withcatai/node-llama-cpp), and **js-libp2p** for peer-to-peer networking.
+OpenCoral is an open-source attempt to build a **decentralized large language model network** as a modern desktop application. Inspired by [Petals](https://github.com/bigscience-workshop/petals), it splits transformer blocks across many machines and chains inference requests through them — but rebuilds the concept from scratch using a contemporary **TypeScript/Bun/Electron** stack, **GGUF** model format via [node-llama-cpp](https://github.com/withcatai/node-llama-cpp), and **js-libp2p** for peer-to-peer networking.
 
 Every running instance is both a **client and a node**: it loads a slice of a large model (e.g. Llama 3.1 70B), serves those blocks to other peers, and earns tokens that pay for its own inference usage. The result is a Goose-style agentic desktop client where users can chat, run tools, and contribute compute — all without centralized GPU infrastructure.
 
@@ -41,7 +41,7 @@ flowchart TB
     end
 
     subgraph Preload["Preload Bridge"]
-        IPC["window.coral.* IPC API"]
+        IPC["window.opencoral.* IPC API"]
     end
 
     subgraph Main["Main Process (Electron + Bun)"]
@@ -65,7 +65,7 @@ flowchart TB
     end
 
     subgraph P2P["P2P Layer (libp2p)"]
-        CN["CoralNode — TCP + Noise + Yamux + Kad-DHT"]
+        CN["OpenCoralNode — TCP + Noise + Yamux + Kad-DHT"]
         DHT["DHT — per-block provider records"]
         IP["InferenceProtocol — binary tensor streaming"]
         MA["ModelAnnounce — peer metadata exchange"]

@@ -54,11 +54,27 @@ export interface ChatMessage {
   timestamp: number
 }
 
+export interface ChatSession {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  createdAt: number
+}
+
+export interface PeerModelInfo {
+  repoId: string
+  hfFilename: string
+  blockStart: number
+  blockEnd: number
+  totalBlocks: number
+  architecture: string
+}
+
 export interface NetworkState {
   localPeerId: string
   localMultiaddrs: string[]
   localBlocks: { start: number; end: number }[]
-  peers: { peerId: string; multiaddrs: string[]; blockRanges: { start: number; end: number }[]; isLocal: boolean; connected: boolean }[]
+  peers: { peerId: string; multiaddrs: string[]; blockRanges: { start: number; end: number }[]; isLocal: boolean; connected: boolean; modelInfo?: PeerModelInfo }[]
   connections: { from: string; to: string }[]
   timestamp: number
 }
@@ -124,9 +140,23 @@ export interface NetworkModelEntry {
   peers: { peerId: string; blockStart: number; blockEnd: number }[]
 }
 
+export interface LocalModelEntry {
+  path: string
+  filename: string
+  architecture: string
+  totalBlocks: number
+  hiddenSize: number
+  headCount: number
+  fileSizeBytes: number
+  repoId?: string
+  hfFilename?: string
+  blockStart: number | null
+  blockEnd: number | null
+}
+
 declare global {
   interface Window {
-    coral: {
+    opencoral: {
       version: () => string
       getNetworkState: () => Promise<NetworkState | null>
       selectModel: () => Promise<ModelInfo | null>
@@ -147,6 +177,7 @@ declare global {
       hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) => Promise<string>
       discoverNetworkModels: () => Promise<NetworkModelEntry[]>
       loadModelByHFIdentity: (repoId: string, hfFilename: string) => Promise<ModelInfo>
+      listLocalModels: () => Promise<LocalModelEntry[]>
     }
   }
 }

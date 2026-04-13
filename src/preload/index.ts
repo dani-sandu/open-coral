@@ -1,43 +1,45 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-contextBridge.exposeInMainWorld('coral', {
+contextBridge.exposeInMainWorld('opencoral', {
   version: () => process.versions.electron,
 
   // Network
-  getNetworkState: () => ipcRenderer.invoke('coral:get-network-state'),
+  getNetworkState: () => ipcRenderer.invoke('opencoral:get-network-state'),
 
   // Model
-  selectModel: () => ipcRenderer.invoke('coral:select-model'),
-  loadModelPath: (filePath: string) => ipcRenderer.invoke('coral:load-model-path', filePath),
-  getModel: () => ipcRenderer.invoke('coral:get-model'),
+  selectModel: () => ipcRenderer.invoke('opencoral:select-model'),
+  loadModelPath: (filePath: string) => ipcRenderer.invoke('opencoral:load-model-path', filePath),
+  getModel: () => ipcRenderer.invoke('opencoral:get-model'),
 
   // Block hosting
   startHosting: (blockStart: number, blockEnd: number) =>
-    ipcRenderer.invoke('coral:start-hosting', blockStart, blockEnd),
-  stopHosting: () => ipcRenderer.invoke('coral:stop-hosting'),
-  getHostingState: () => ipcRenderer.invoke('coral:get-hosting-state'),
+    ipcRenderer.invoke('opencoral:start-hosting', blockStart, blockEnd),
+  stopHosting: () => ipcRenderer.invoke('opencoral:stop-hosting'),
+  getHostingState: () => ipcRenderer.invoke('opencoral:get-hosting-state'),
 
   // Coverage & inference
-  checkCoverage: () => ipcRenderer.invoke('coral:check-coverage'),
+  checkCoverage: () => ipcRenderer.invoke('opencoral:check-coverage'),
   runInference: (prompt: string, nTokens: number) =>
-    ipcRenderer.invoke('coral:run-inference', prompt, nTokens),
+    ipcRenderer.invoke('opencoral:run-inference', prompt, nTokens),
 
   // Hugging Face
-  hfSearch: (query: string) => ipcRenderer.invoke('coral:hf-search', query),
-  hfListFiles: (repoId: string) => ipcRenderer.invoke('coral:hf-list-files', repoId),
+  hfSearch: (query: string) => ipcRenderer.invoke('opencoral:hf-search', query),
+  hfListFiles: (repoId: string) => ipcRenderer.invoke('opencoral:hf-list-files', repoId),
   hfDownload: (repoId: string, filename: string) =>
-    ipcRenderer.invoke('coral:hf-download', repoId, filename),
-  hfDownloadProgress: () => ipcRenderer.invoke('coral:hf-download-progress'),
-  hfCancelDownload: () => ipcRenderer.invoke('coral:hf-cancel-download'),
+    ipcRenderer.invoke('opencoral:hf-download', repoId, filename),
+  hfDownloadProgress: () => ipcRenderer.invoke('opencoral:hf-download-progress'),
+  hfCancelDownload: () => ipcRenderer.invoke('opencoral:hf-cancel-download'),
   hfPreviewModel: (repoId: string, filename: string) =>
-    ipcRenderer.invoke('coral:hf-preview-model', repoId, filename),
+    ipcRenderer.invoke('opencoral:hf-preview-model', repoId, filename),
   hfEstimateBlocks: (blockStart: number, blockEnd: number) =>
-    ipcRenderer.invoke('coral:hf-estimate-blocks', blockStart, blockEnd),
+    ipcRenderer.invoke('opencoral:hf-estimate-blocks', blockStart, blockEnd),
   hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) =>
-    ipcRenderer.invoke('coral:hf-download-partial', repoId, filename, blockStart, blockEnd),
+    ipcRenderer.invoke('opencoral:hf-download-partial', repoId, filename, blockStart, blockEnd),
 
   // Network model discovery
-  discoverNetworkModels: () => ipcRenderer.invoke('coral:discover-network-models'),
+  discoverNetworkModels: () => ipcRenderer.invoke('opencoral:discover-network-models'),
   loadModelByHFIdentity: (repoId: string, hfFilename: string) =>
-    ipcRenderer.invoke('coral:load-model-by-hf-identity', repoId, hfFilename),
+    ipcRenderer.invoke('opencoral:load-model-by-hf-identity', repoId, hfFilename),
+
+  listLocalModels: () => ipcRenderer.invoke('opencoral:list-local-models'),
 })

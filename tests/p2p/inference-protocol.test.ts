@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createCoralNode, type CoralNode } from '../../src/p2p/node'
+import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import {
   INFERENCE_PROTOCOL,
   registerInferenceHandler,
@@ -8,12 +8,12 @@ import {
 } from '../../src/p2p/inference-protocol'
 
 describe('inference protocol', () => {
-  let nodeA: CoralNode
-  let nodeB: CoralNode
+  let nodeA: OpenCoralNode
+  let nodeB: OpenCoralNode
 
   beforeAll(async () => {
-    nodeA = await createCoralNode()
-    nodeB = await createCoralNode()
+    nodeA = await createOpenCoralNode()
+    nodeB = await createOpenCoralNode()
     await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
   })
 
@@ -23,7 +23,7 @@ describe('inference protocol', () => {
   })
 
   it('protocol ID is correct', () => {
-    expect(INFERENCE_PROTOCOL).toBe('/coral/inference/1.0.0')
+    expect(INFERENCE_PROTOCOL).toBe('/opencoral/inference/1.0.0')
   })
 
   it('handler receives correct tensor shape', async () => {

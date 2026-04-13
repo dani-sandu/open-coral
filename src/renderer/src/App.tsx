@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import NetworkView from './NetworkView'
-import ModelPanel from './ModelPanel'
-import BlockHostPanel from './BlockHostPanel'
+import ModelsPanel from './ModelsPanel'
 import ChatPanel from './ChatPanel'
+import type { ChatSession } from './types'
 import './types'
 
 // ── Shared color palette ───────────────────────────────────────────────────────
@@ -12,22 +12,45 @@ const C = {
   text: '#cdd6f4', dim: '#6c7086', accent: '#7c6af7',
 }
 
-type Tab = 'network' | 'model' | 'blocks' | 'chat'
+type Tab = 'network' | 'models' | 'chat'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'network', label: 'Network' },
-  { id: 'model', label: 'Model' },
-  { id: 'blocks', label: 'Blocks' },
+  { id: 'models', label: 'Models' },
   { id: 'chat', label: 'Chat' },
 ]
 
 export default function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('network')
 
+  // ── Chat session state (persists across tab switches) ─────────────────────
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+
+  const createSession = useCallback(() => {
+    const s: ChatSession = {
+      id: `session-${Date.now()}`,
+      title: 'New chat',
+      messages: [],
+      createdAt: Date.now(),
+    }
+    setSessions(prev => [s, ...prev])
+    setActiveSessionId(s.id)
+  }, [])
+
+  const updateSession = useCallback((id: string, patch: Partial<ChatSession>) => {
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s))
+  }, [])
+
+  const deleteSession = useCallback((id: string) => {
+    setSessions(prev => prev.filter(s => s.id !== id))
+    setActiveSessionId(prev => prev === id ? null : prev)
+  }, [])
+
   return (
     <div style={{
       fontFamily: 'system-ui', background: C.bg, color: C.text,
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* Header */}
       <div style={{
@@ -36,7 +59,7 @@ export default function App(): React.JSX.Element {
         borderBottom: `1px solid ${C.border}`,
       }}>
         <span style={{ color: C.accent, fontSize: 20, fontWeight: 700 }}>⬡</span>
-        <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>Coral</span>
+        <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>OpenCoral</span>
         <span style={{ color: C.dim, fontSize: 11 }}>Decentralized LLM</span>
       </div>
 
@@ -62,12 +85,24 @@ export default function App(): React.JSX.Element {
         ))}
       </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, padding: '4px 16px 16px' }}>
-        {tab === 'network' && <NetworkView />}
-        {tab === 'model' && <ModelPanel />}
-        {tab === 'blocks' && <BlockHostPanel />}
-        {tab === 'chat' && <ChatPanel />}
+      {/* Tab content — all tabs stay mounted, hidden via display:none to preserve state */}
+      <div style={{ flex: 1, padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, display: tab === 'network' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+          <NetworkView />
+        </div>
+        <div style={{ flex: 1, display: tab === 'models' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+          <ModelsPanel />
+        </div>
+        <div style={{ flex: 1, display: tab === 'chat' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+          <ChatPanel
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={setActiveSessionId}
+            onCreateSession={createSession}
+            onUpdateSession={updateSession}
+            onDeleteSession={deleteSession}
+          />
+        </div>
       </div>
     </div>
   )

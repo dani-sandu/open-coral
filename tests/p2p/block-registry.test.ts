@@ -1,16 +1,16 @@
 import { describe, it, expect, afterEach, mock } from 'bun:test'
-import { createCoralNode, type CoralNode } from '../../src/p2p/node'
+import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import { BlockRegistry } from '../../src/p2p/block-registry'
 
 describe('BlockRegistry', () => {
-  const nodes: CoralNode[] = []
+  const nodes: OpenCoralNode[] = []
   afterEach(async () => {
     await Promise.all(nodes.map(n => n.stop()))
     nodes.length = 0
   })
 
   it('announces on start()', async () => {
-    const node = await createCoralNode()
+    const node = await createOpenCoralNode()
     nodes.push(node)
     let announced = false
     const spy = mock(async () => { announced = true })
@@ -27,7 +27,7 @@ describe('BlockRegistry', () => {
   })
 
   it('dispose() cancels re-announcement timer', async () => {
-    const node = await createCoralNode()
+    const node = await createOpenCoralNode()
     nodes.push(node)
     let callCount = 0
     const spy = mock(async () => { callCount++ })
@@ -58,7 +58,7 @@ describe('BlockRegistry', () => {
   })
 
   it('start() + stop() via node.stop() integration', async () => {
-    const node = await createCoralNode()
+    const node = await createOpenCoralNode()
     nodes.push(node)
 
     const registry = new BlockRegistry(node.libp2p, {

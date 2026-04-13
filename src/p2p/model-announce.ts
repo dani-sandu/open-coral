@@ -1,7 +1,7 @@
 import type { Libp2p } from 'libp2p'
 import type { PeerId, Stream } from '@libp2p/interface'
 
-export const MODEL_INFO_PROTOCOL = '/coral/modelinfo/1.0.0'
+export const MODEL_INFO_PROTOCOL = '/opencoral/modelinfo/1.0.0'
 
 export interface PeerModelInfoPayload {
   repoId: string

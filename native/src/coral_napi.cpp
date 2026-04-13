@@ -10,7 +10,7 @@ static std::atomic<uint32_t> g_next_handle{1};
 
 // ── hello ─────────────────────────────────────────────────────────────────────
 Napi::String Hello(const Napi::CallbackInfo& info) {
-    return Napi::String::New(info.Env(), "coral-native ready");
+    return Napi::String::New(info.Env(), "opencoral-native ready");
 }
 
 // ── loadBlockRange ────────────────────────────────────────────────────────────

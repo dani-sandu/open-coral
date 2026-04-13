@@ -17,8 +17,8 @@ export default function BlockHostPanel(): React.JSX.Element {
 
   const reload = useCallback(async () => {
     const [m, s] = await Promise.all([
-      window.coral.getModel(),
-      window.coral.getHostingState(),
+      window.opencoral.getModel(),
+      window.opencoral.getHostingState(),
     ])
     setModel(m)
     setState(s)
@@ -34,7 +34,7 @@ export default function BlockHostPanel(): React.JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      await window.coral.startHosting(blockStart, blockEnd)
+      await window.opencoral.startHosting(blockStart, blockEnd)
       await reload()
     } catch (e) {
       setError(String(e))
@@ -47,7 +47,7 @@ export default function BlockHostPanel(): React.JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      await window.coral.stopHosting()
+      await window.opencoral.stopHosting()
       await reload()
     } catch (e) {
       setError(String(e))

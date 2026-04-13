@@ -3,16 +3,16 @@ import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { buildTinyGGUF, TINY_CONFIG } from './fixtures/make-tiny-gguf'
 import { BlockRunner } from '../../src/inference/block-runner'
-import { createCoralNode, type CoralNode } from '../../src/p2p/node'
+import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import { BlockRegistry } from '../../src/p2p/block-registry'
 import { registerInferenceHandler } from '../../src/p2p/inference-protocol'
-import { SequenceManager } from '../../src/inference/sequence-manager'
+import { SequenceManager, type ChainStepCandidate } from '../../src/inference/sequence-manager'
 
 const MODEL_PATH = join(import.meta.dir, 'fixtures', '_seq-test.gguf')
 
 describe('SequenceManager', () => {
-  let nodeA: CoralNode
-  let nodeB: CoralNode
+  let nodeA: OpenCoralNode
+  let nodeB: OpenCoralNode
   let runnerA: BlockRunner   // hosts block 0
   let runnerB: BlockRunner   // hosts block 1
   let registryA: BlockRegistry
@@ -21,8 +21,8 @@ describe('SequenceManager', () => {
   beforeAll(async () => {
     writeFileSync(MODEL_PATH, buildTinyGGUF())
 
-    nodeA = await createCoralNode()
-    nodeB = await createCoralNode()
+    nodeA = await createOpenCoralNode()
+    nodeB = await createOpenCoralNode()
 
     // Dial A→B so they share DHT routing tables
     await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
@@ -155,5 +155,41 @@ describe('SequenceManager', () => {
     const report = await mgr.checkCoverage()
     expect(report.complete).toBe(false)
     expect(report.missing).toContain(TINY_CONFIG.n_blocks)
+  }, 15000)
+})
+
+describe('SequenceManager — fault tolerance', () => {
+  it('retries with the next candidate when the first peer throws', async () => {
+    const nodeA = await createOpenCoralNode()
+    const nodeB = await createOpenCoralNode()
+    await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
+
+    // Both cover blocks 0–1 (TINY_CONFIG.n_blocks = 2).
+    // nodeA has NO handler registered — dialing it on the inference protocol will throw.
+    // nodeB has a handler that echoes input.
+    await registerInferenceHandler(nodeB.libp2p, async (input) => input)
+
+    const candidates: ChainStepCandidate[] = [
+      { peerId: nodeA.libp2p.peerId.toString(), blockStart: 0, blockEnd: 1, multiaddr: nodeA.libp2p.getMultiaddrs()[0].toString() },
+      { peerId: nodeB.libp2p.peerId.toString(), blockStart: 0, blockEnd: 1, multiaddr: nodeB.libp2p.getMultiaddrs()[0].toString() },
+    ]
+
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: null,
+      totalBlocks: 2,
+      hiddenSize: TINY_CONFIG.n_embd,
+    })
+
+    const chain = await mgr.planChainWithCandidates(candidates)
+
+    // Should succeed even though nodeA has no handler, by retrying nodeB
+    const input = new Float32Array(1 * TINY_CONFIG.n_embd).fill(0.5)
+    const output = await mgr.runChainWithRetry(chain, input, 1)
+    expect(output).toBeInstanceOf(Float32Array)
+    expect(output.length).toBe(1 * TINY_CONFIG.n_embd)
+
+    await nodeA.stop()
+    await nodeB.stop()
   }, 15000)
 })

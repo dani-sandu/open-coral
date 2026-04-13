@@ -1,0 +1,1115 @@
+import React, { useState, useCallback, useEffect, useRef } from 'react'
+import type {
+  ModelInfo, LocalModelEntry, HostingState,
+  HFModelResult, HFFileInfo, HFModelPreview, DownloadProgress, BlockEstimate,
+} from './types'
+
+// ── Shared color palette ────────────────────────────────────────────────────────
+
+const C = {
+  bg: '#1e1e2e', surface: '#181825', surface2: '#1f1f30', border: '#313244',
+  text: '#cdd6f4', dim: '#6c7086', accent: '#7c6af7', accentDim: '#45396e',
+  red: '#f38ba8', green: '#a6e3a1', yellow: '#f9e2af', blue: '#89b4fa',
+}
+
+function fmt(bytes: number): string {
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB'
+  if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB'
+  return (bytes / 1e3).toFixed(0) + ' KB'
+}
+
+function fmtCount(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+  return String(n)
+}
+
+// ── Quantization helpers ────────────────────────────────────────────────────────
+
+interface QuantInfo {
+  quant: string
+  quality: 'low' | 'medium' | 'high'
+  label: string
+  order: number
+}
+
+const QUANT_TABLE: Record<string, QuantInfo> = {
+  'Q2_K':   { quant: 'Q2_K',   quality: 'low',    label: 'Smallest — fast, lower quality', order: 1 },
+  'Q3_K_S': { quant: 'Q3_K_S', quality: 'low',    label: 'Small — fast, lower quality', order: 2 },
+  'Q3_K_M': { quant: 'Q3_K_M', quality: 'low',    label: 'Small — balanced for low RAM', order: 3 },
+  'Q3_K_L': { quant: 'Q3_K_L', quality: 'medium', label: 'Small-medium', order: 4 },
+  'IQ4_XS': { quant: 'IQ4_XS', quality: 'medium', label: 'Compact medium quality', order: 5 },
+  'Q4_0':   { quant: 'Q4_0',   quality: 'medium', label: 'Medium — legacy quantization', order: 6 },
+  'Q4_K_S': { quant: 'Q4_K_S', quality: 'medium', label: 'Medium — good speed', order: 7 },
+  'Q4_K_M': { quant: 'Q4_K_M', quality: 'medium', label: 'Recommended — best balance of size & quality', order: 8 },
+  'Q5_0':   { quant: 'Q5_0',   quality: 'high',   label: 'High — legacy quantization', order: 9 },
+  'Q5_K_S': { quant: 'Q5_K_S', quality: 'high',   label: 'High quality', order: 10 },
+  'Q5_K_M': { quant: 'Q5_K_M', quality: 'high',   label: 'High quality — slightly larger', order: 11 },
+  'Q6_K':   { quant: 'Q6_K',   quality: 'high',   label: 'Very high quality — large', order: 12 },
+  'Q8_0':   { quant: 'Q8_0',   quality: 'high',   label: 'Near-lossless — very large', order: 13 },
+  'F16':    { quant: 'F16',    quality: 'high',   label: 'Full precision fp16 — largest', order: 14 },
+  'F32':    { quant: 'F32',    quality: 'high',   label: 'Full precision fp32 — largest', order: 15 },
+  'BF16':   { quant: 'BF16',   quality: 'high',   label: 'Full precision bf16 — largest', order: 16 },
+}
+
+const RECOMMENDED_QUANT = 'Q4_K_M'
+
+function extractQuant(filename: string): string | null {
+  const m = filename.match(/[.-]((?:IQ|Q|F|BF)\d+(?:_K)?(?:_[A-Z]+)?|F16|F32|BF16)(?:[.-]|$)/i)
+  return m ? m[1].toUpperCase() : null
+}
+
+function getQuantInfo(quant: string): QuantInfo {
+  return QUANT_TABLE[quant] ?? { quant, quality: 'medium' as const, label: quant, order: 50 }
+}
+
+const qualityColor: Record<string, string> = {
+  low: C.yellow, medium: C.green, high: C.blue,
+}
+
+// ── Sub-view type ───────────────────────────────────────────────────────────────
+
+type View = 'home' | 'search' | 'files' | 'preview' | 'downloading'
+
+// ── Component ───────────────────────────────────────────────────────────────────
+
+export default function ModelsPanel(): React.JSX.Element {
+  // ── Local model list ──────────────────────────────────────────────────────
+  const [localModels, setLocalModels] = useState<LocalModelEntry[]>([])
+  const [selectedModel, setSelectedModel] = useState<LocalModelEntry | null>(null)
+  const [activeModel, setActiveModel] = useState<ModelInfo | null>(null)
+
+  // ── Hosting ───────────────────────────────────────────────────────────────
+  const [hostingState, setHostingState] = useState<HostingState | null>(null)
+  const [hostBlockStart, setHostBlockStart] = useState(0)
+  const [hostBlockEnd, setHostBlockEnd] = useState(0)
+  const [hostBusy, setHostBusy] = useState(false)
+
+  // ── General ───────────────────────────────────────────────────────────────
+  const [error, setError] = useState<string | null>(null)
+  const [loadingModels, setLoadingModels] = useState(true)
+
+  // ── HF search / download flow ─────────────────────────────────────────────
+  const [view, setView] = useState<View>('home')
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<HFModelResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [selectedRepo, setSelectedRepo] = useState<HFModelResult | null>(null)
+  const [files, setFiles] = useState<HFFileInfo[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(false)
+  const [showAllFiles, setShowAllFiles] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [preview, setPreview] = useState<HFModelPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<HFFileInfo | null>(null)
+  const [pBlockStart, setPBlockStart] = useState(0)
+  const [pBlockEnd, setPBlockEnd] = useState(0)
+  const [estimate, setEstimate] = useState<BlockEstimate | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // ── Refresh all state ─────────────────────────────────────────────────────
+  const refresh = useCallback(async () => {
+    setLoadingModels(true)
+    try {
+      const [models, model, hosting] = await Promise.all([
+        window.opencoral.listLocalModels(),
+        window.opencoral.getModel(),
+        window.opencoral.getHostingState(),
+      ])
+      setLocalModels(models)
+      setActiveModel(model)
+      setHostingState(hosting)
+    } finally {
+      setLoadingModels(false)
+    }
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  // ── Poll download progress ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!downloading) return
+    pollRef.current = setInterval(async () => {
+      const p = await window.opencoral.hfDownloadProgress()
+      if (p) setProgress(p)
+      if (p?.done) {
+        setDownloading(false)
+        if (p.localPath && !p.error) {
+          try {
+            const m = await window.opencoral.loadModelPath(p.localPath)
+            setActiveModel(m)
+            await refresh()
+            setView('home')
+          } catch (e) {
+            setError(String(e))
+            setView('home')
+          }
+        } else if (p.error) {
+          setError(p.error)
+          setView('files')
+        }
+      }
+    }, 300)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [downloading, refresh])
+
+  // ── Model selection / loading ─────────────────────────────────────────────
+  const selectLocalModel = useCallback(async (entry: LocalModelEntry) => {
+    setSelectedModel(entry)
+    setError(null)
+    // Determine hosting block range defaults
+    const bStart = entry.blockStart ?? 0
+    const bEnd = entry.blockEnd ?? Math.max(0, Math.floor(entry.totalBlocks / 2) - 1)
+    setHostBlockStart(bStart)
+    setHostBlockEnd(bEnd)
+    // Load into the engine
+    try {
+      const m = await window.opencoral.loadModelPath(entry.path)
+      setActiveModel(m)
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [])
+
+  const pick = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const m = await window.opencoral.selectModel()
+      if (m) {
+        setActiveModel(m)
+        await refresh()
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [refresh])
+
+  // ── Hosting controls ──────────────────────────────────────────────────────
+  const startHosting = useCallback(async () => {
+    setHostBusy(true)
+    setError(null)
+    try {
+      await window.opencoral.startHosting(hostBlockStart, hostBlockEnd)
+      await refresh()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setHostBusy(false)
+    }
+  }, [hostBlockStart, hostBlockEnd, refresh])
+
+  const stopHosting = useCallback(async () => {
+    setHostBusy(true)
+    setError(null)
+    try {
+      await window.opencoral.stopHosting()
+      await refresh()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setHostBusy(false)
+    }
+  }, [refresh])
+
+  // ── HF actions ────────────────────────────────────────────────────────────
+  const search = useCallback(async () => {
+    if (!query.trim()) return
+    setSearching(true)
+    setError(null)
+    try {
+      const r = await window.opencoral.hfSearch(query.trim())
+      setResults(r)
+      setView('search')
+    } catch (e) { setError(String(e)) }
+    finally { setSearching(false) }
+  }, [query])
+
+  const selectRepo = useCallback(async (repo: HFModelResult) => {
+    setSelectedRepo(repo)
+    setLoadingFiles(true)
+    setError(null)
+    setShowAllFiles(false)
+    try {
+      const f = await window.opencoral.hfListFiles(repo.id)
+      f.sort((a, b) => {
+        const qa = extractQuant(a.rfilename)
+        const qb = extractQuant(b.rfilename)
+        return (qa ? getQuantInfo(qa).order : 50) - (qb ? getQuantInfo(qb).order : 50)
+      })
+      setFiles(f)
+      setView('files')
+    } catch (e) { setError(String(e)) }
+    finally { setLoadingFiles(false) }
+  }, [])
+
+  const cancelDownload = useCallback(async () => {
+    await window.opencoral.hfCancelDownload()
+    setDownloading(false)
+    setView('files')
+  }, [])
+
+  const selectFileForPreview = useCallback(async (file: HFFileInfo) => {
+    if (!selectedRepo) return
+    setSelectedFile(file)
+    setPreviewLoading(true)
+    setPreview(null)
+    setEstimate(null)
+    setError(null)
+    setView('preview')
+    try {
+      const p = await window.opencoral.hfPreviewModel(selectedRepo.id, file.rfilename)
+      setPreview(p)
+      setPBlockStart(0)
+      setPBlockEnd(Math.min(3, p.totalBlocks - 1))
+      const est = await window.opencoral.hfEstimateBlocks(0, Math.min(3, p.totalBlocks - 1))
+      setEstimate(est)
+    } catch (e) {
+      setError(String(e))
+      setView('files')
+    } finally { setPreviewLoading(false) }
+  }, [selectedRepo])
+
+  const updateEstimate = useCallback(async (start: number, end: number) => {
+    setPBlockStart(start)
+    setPBlockEnd(end)
+    try {
+      const est = await window.opencoral.hfEstimateBlocks(start, end)
+      setEstimate(est)
+    } catch { setEstimate(null) }
+  }, [])
+
+  const startPartialDownload = useCallback(async (full = false) => {
+    if (!selectedRepo || !selectedFile) return
+    setDownloading(true)
+    setProgress(null)
+    setError(null)
+    setView('downloading')
+    try {
+      if (full) {
+        await window.opencoral.hfDownload(selectedRepo.id, selectedFile.rfilename)
+      } else {
+        await window.opencoral.hfDownloadPartial(selectedRepo.id, selectedFile.rfilename, pBlockStart, pBlockEnd)
+      }
+    } catch (e) {
+      setError(String(e))
+      setDownloading(false)
+      setView('preview')
+    }
+  }, [selectedRepo, selectedFile, pBlockStart, pBlockEnd])
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const isHostingModel = (entry: LocalModelEntry) =>
+    hostingState && hostingState.modelPath === entry.path
+
+  const maxHostBlock = selectedModel
+    ? (selectedModel.blockEnd ?? selectedModel.totalBlocks - 1)
+    : 0
+  const minHostBlock = selectedModel
+    ? (selectedModel.blockStart ?? 0)
+    : 0
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  return (
+    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+      <h2 style={{ color: C.text, fontSize: 16, margin: '0 0 16px' }}>
+        <span style={{ color: C.accent }}>⬡</span> Models
+      </h2>
+
+      {error && (
+        <div style={{
+          color: C.red, fontSize: 12, marginBottom: 12,
+          padding: '6px 10px', background: C.red + '11', borderRadius: 6,
+        }}>{error}</div>
+      )}
+
+      {/* ── Home view ──────────────────────────────────────────── */}
+      {view === 'home' && (
+        <>
+          {/* ─ Currently Hosting ─ */}
+          {hostingState && (() => {
+            const hostedEntry = localModels.find(e => e.path === hostingState.modelPath)
+            return (
+              <div style={{
+                background: C.green + '0c', border: `1px solid ${C.green}33`,
+                borderRadius: 10, padding: 14, marginBottom: 20,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: C.green, display: 'inline-block', boxShadow: `0 0 6px ${C.green}66` }} />
+                    <span style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Currently Hosting</span>
+                  </div>
+                  <button
+                    onClick={stopHosting}
+                    disabled={hostBusy}
+                    style={{
+                      background: 'transparent', color: C.red,
+                      border: `1px solid ${C.red}44`,
+                      borderRadius: 6, padding: '4px 12px', fontSize: 11,
+                      cursor: hostBusy ? 'default' : 'pointer',
+                    }}
+                  >
+                    {hostBusy ? 'Stopping…' : 'Stop'}
+                  </button>
+                </div>
+                <div style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                  <div style={{ color: C.text, fontWeight: 600, marginBottom: 6 }}>
+                    {hostedEntry?.filename ?? hostingState.modelPath.split(/[\\/]/).pop()}
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, color: C.dim, fontSize: 11 }}>
+                    <span>Blocks {hostingState.blockStart}–{hostingState.blockEnd}</span>
+                    <span>Hidden {hostingState.hiddenSize}</span>
+                  </div>
+                </div>
+                {/* Hosted blocks bar */}
+                <div style={{ display: 'flex', gap: 2, marginTop: 10 }}>
+                  {Array.from({ length: hostingState.totalBlocks }, (_, i) => {
+                    const hosted = i >= hostingState.blockStart && i <= hostingState.blockEnd
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          flex: 1, height: 10, borderRadius: 2,
+                          background: hosted ? C.green : C.border,
+                          opacity: hosted ? 1 : 0.25,
+                        }}
+                        title={`Block ${i}${hosted ? ' (hosted)' : ''}`}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* ─ Loading spinner ─ */}
+          {loadingModels && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" style={{ animation: 'spin 1s linear infinite' }}>
+                <circle cx="10" cy="10" r="8" fill="none" stroke={C.accent} strokeWidth="2" strokeDasharray="40 20" strokeLinecap="round" />
+              </svg>
+              <span style={{ color: C.dim, fontSize: 12 }}>Loading models…</span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            </div>
+          )}
+
+          {/* ─ Downloaded models list ─ */}
+          {!loadingModels && localModels.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>Downloaded models</div>
+              {localModels.map(entry => {
+                const hosting = isHostingModel(entry)
+                const isSelected = selectedModel?.path === entry.path
+                const rangeLabel = entry.blockStart != null && entry.blockEnd != null
+                  ? `blocks ${entry.blockStart}–${entry.blockEnd} of ${entry.totalBlocks}`
+                  : `all ${entry.totalBlocks} blocks`
+                const quant = extractQuant(entry.filename)
+
+                return (
+                  <div key={entry.path} style={{ marginBottom: 6 }}>
+                    {/* ─ Model card header ─ */}
+                    <button
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedModel(null)
+                        } else {
+                          selectLocalModel(entry)
+                        }
+                      }}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', textAlign: 'left',
+                        background: isSelected ? C.accent + '14' : C.surface,
+                        border: `1px solid ${isSelected ? C.accent + '55' : C.border}`,
+                        borderRadius: isSelected ? '10px 10px 0 0' : 10,
+                        padding: '12px 14px', cursor: 'pointer',
+                        transition: 'border-color 0.15s, background 0.15s',
+                      }}
+                      onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = C.accent + '44' }}
+                      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.borderColor = C.border }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{
+                            color: C.text, fontSize: 13, fontWeight: 600, fontFamily: 'monospace',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {entry.filename}
+                          </span>
+                          {quant && (() => {
+                            const info = getQuantInfo(quant)
+                            return (
+                              <span style={{
+                                fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                                background: qualityColor[info.quality] + '18',
+                                color: qualityColor[info.quality],
+                                border: `1px solid ${qualityColor[info.quality]}33`,
+                                flexShrink: 0,
+                              }}>
+                                {info.quality}
+                              </span>
+                            )
+                          })()}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.dim }}>
+                          {entry.architecture} · {rangeLabel} · {fmt(entry.fileSizeBytes)}
+                        </div>
+                      </div>
+                      <div style={{ flexShrink: 0, marginLeft: 12, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {hosting ? (
+                          <span style={{
+                            fontSize: 10, padding: '3px 8px', borderRadius: 4,
+                            background: C.green + '18', color: C.green,
+                            border: `1px solid ${C.green}33`,
+                          }}>
+                            Hosting {hostingState!.blockStart}–{hostingState!.blockEnd}
+                          </span>
+                        ) : (
+                          <span style={{ color: C.dim, fontSize: 10 }}>{isSelected ? 'Collapse' : 'Configure'}</span>
+                        )}
+                        <span style={{ color: C.dim, fontSize: 10, transition: 'transform 0.2s', transform: isSelected ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
+                      </div>
+                    </button>
+
+                    {/* ─ Expanded inline detail ─ */}
+                    {isSelected && (
+                      <div style={{
+                        background: C.surface, border: `1px solid ${C.accent}55`,
+                        borderTop: 'none',
+                        borderRadius: '0 0 10px 10px', padding: 16,
+                      }}>
+                        {/* Model metadata */}
+                        <div style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 14 }}>
+                          {([
+                            ['Architecture', selectedModel.architecture],
+                            ['Total blocks', selectedModel.totalBlocks],
+                            ['Hidden size', selectedModel.hiddenSize],
+                            ['File size', fmt(selectedModel.fileSizeBytes)],
+                            ['Downloaded range', selectedModel.blockStart != null
+                              ? `${selectedModel.blockStart}–${selectedModel.blockEnd}`
+                              : 'Full model'],
+                          ] as [string, string | number][]).map(([l, v]) => (
+                            <div key={l} style={{
+                              display: 'flex', justifyContent: 'space-between',
+                              padding: '3px 0', borderBottom: `1px solid ${C.border}`,
+                            }}>
+                              <span style={{ color: C.dim }}>{l}</span>
+                              <span style={{ color: C.text }}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Block selector to host */}
+                        {!hosting && (
+                          <>
+                            <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 8 }}>
+                              Select blocks to host
+                            </div>
+                            <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>
+                              Choose which downloaded blocks to serve on the network.
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
+                              <label style={{ color: C.dim, fontSize: 12 }}>Start</label>
+                              <input
+                                type="number"
+                                min={minHostBlock}
+                                max={maxHostBlock}
+                                value={hostBlockStart}
+                                onChange={e => {
+                                  const v = Math.max(minHostBlock, Math.min(Number(e.target.value), maxHostBlock))
+                                  setHostBlockStart(v)
+                                  if (hostBlockEnd < v) setHostBlockEnd(v)
+                                }}
+                                style={numInputStyle}
+                              />
+                              <label style={{ color: C.dim, fontSize: 12 }}>End</label>
+                              <input
+                                type="number"
+                                min={hostBlockStart}
+                                max={maxHostBlock}
+                                value={hostBlockEnd}
+                                onChange={e => {
+                                  const v = Math.max(hostBlockStart, Math.min(Number(e.target.value), maxHostBlock))
+                                  setHostBlockEnd(v)
+                                }}
+                                style={numInputStyle}
+                              />
+                              <span style={{ color: C.dim, fontSize: 11 }}>
+                                {hostBlockEnd - hostBlockStart + 1} of {selectedModel.totalBlocks} blocks
+                              </span>
+                            </div>
+
+                            {/* Visual block bar */}
+                            <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
+                              {Array.from({ length: selectedModel.totalBlocks }, (_, i) => {
+                                const downloaded = selectedModel.blockStart != null
+                                  ? i >= selectedModel.blockStart && i <= (selectedModel.blockEnd ?? selectedModel.totalBlocks - 1)
+                                  : true
+                                const selected = i >= hostBlockStart && i <= hostBlockEnd
+                                let bg = C.border
+                                let opacity = 0.25
+                                if (downloaded && selected) {
+                                  bg = C.accent
+                                  opacity = 1
+                                } else if (downloaded) {
+                                  bg = C.dim
+                                  opacity = 0.45
+                                }
+                                return (
+                                  <div
+                                    key={i}
+                                    style={{
+                                      flex: 1, height: 16, borderRadius: 2,
+                                      background: bg, opacity,
+                                      transition: 'background 0.15s, opacity 0.15s',
+                                      cursor: downloaded ? 'pointer' : 'default',
+                                    }}
+                                    title={`Block ${i}${!downloaded ? ' (not downloaded)' : selected ? ' (selected)' : ''}`}
+                                  />
+                                )
+                              })}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 6, fontSize: 10, color: C.dim, marginBottom: 14 }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 2, background: C.accent, display: 'inline-block' }} />
+                                Selected to host
+                              </span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 2, background: C.dim, opacity: 0.45, display: 'inline-block' }} />
+                                Downloaded
+                              </span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 2, background: C.border, opacity: 0.25, display: 'inline-block' }} />
+                                Not downloaded
+                              </span>
+                            </div>
+
+                            <button
+                              onClick={startHosting}
+                              disabled={hostBusy}
+                              style={{
+                                background: C.accent, color: '#fff', border: 'none',
+                                borderRadius: 8, padding: '10px 20px', fontSize: 13,
+                                cursor: hostBusy ? 'default' : 'pointer',
+                                opacity: hostBusy ? 0.6 : 1,
+                              }}
+                            >
+                              {hostBusy ? 'Starting…' : `Start Hosting ${hostBlockEnd - hostBlockStart + 1} blocks`}
+                            </button>
+                          </>
+                        )}
+
+                        {/* Currently hosting — stop button */}
+                        {hosting && hostingState && (
+                          <div>
+                            <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 8 }}>
+                              Hosted blocks
+                            </div>
+                            <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
+                              {Array.from({ length: selectedModel.totalBlocks }, (_, i) => {
+                                const hosted = i >= hostingState.blockStart && i <= hostingState.blockEnd
+                                return (
+                                  <div
+                                    key={i}
+                                    style={{
+                                      flex: 1, height: 16, borderRadius: 2,
+                                      background: hosted ? C.green : C.border,
+                                      opacity: hosted ? 1 : 0.25,
+                                      transition: 'background 0.15s, opacity 0.15s',
+                                    }}
+                                    title={`Block ${i}${hosted ? ' (hosted)' : ''}`}
+                                  />
+                                )
+                              })}
+                            </div>
+                            <div style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: C.dim }}>
+                                <span>Blocks</span>
+                                <span style={{ color: C.text }}>{hostingState.blockStart}–{hostingState.blockEnd}</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={stopHosting}
+                              disabled={hostBusy}
+                              style={{
+                                background: 'transparent', color: C.red,
+                                border: `1px solid ${C.red}44`,
+                                borderRadius: 8, padding: '8px 18px', fontSize: 12,
+                                cursor: hostBusy ? 'default' : 'pointer',
+                              }}
+                            >
+                              {hostBusy ? 'Stopping…' : 'Stop Hosting'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ─ Add new model ─ */}
+          {!loadingModels && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>
+              {localModels.length > 0 ? 'Add another model' : 'Get started — download or select a model'}
+            </div>
+
+            {/* HF Search */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') search() }}
+                placeholder="Search Hugging Face GGUF models…"
+                style={{
+                  flex: 1, background: C.surface, color: C.text,
+                  border: `1px solid ${C.border}`, borderRadius: 8,
+                  padding: '10px 14px', fontSize: 13, outline: 'none',
+                }}
+              />
+              <button
+                onClick={search}
+                disabled={searching || !query.trim()}
+                style={{
+                  background: C.accent, color: '#fff', border: 'none',
+                  borderRadius: 8, padding: '10px 18px', fontSize: 13,
+                  cursor: searching ? 'default' : 'pointer',
+                  opacity: searching || !query.trim() ? 0.6 : 1,
+                }}
+              >
+                {searching ? 'Searching…' : 'Search HF'}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ color: C.dim, fontSize: 11 }}>or</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+
+            <button
+              onClick={pick}
+              disabled={loading}
+              style={{
+                background: 'transparent', color: C.dim, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '10px 20px', fontSize: 13, width: '100%',
+                cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.6 : 1,
+              }}
+            >
+              {loading ? 'Loading…' : 'Select local GGUF file'}
+            </button>
+          </div>
+          )}
+        </>
+      )}
+
+      {/* ── Search results ──────────────────────────────────────── */}
+      {view === 'search' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <button onClick={() => setView('home')} style={backBtnStyle}>Back</button>
+            <span style={{ color: C.dim, fontSize: 11 }}>{results.length} results</span>
+          </div>
+
+          {results.length === 0 && (
+            <div style={{ color: C.dim, fontSize: 12, padding: 20, textAlign: 'center' }}>
+              No GGUF models found for &ldquo;{query}&rdquo;
+            </div>
+          )}
+
+          {results.map(repo => (
+            <button
+              key={repo.id}
+              onClick={() => selectRepo(repo)}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '12px 14px', marginBottom: 6, cursor: 'pointer',
+                transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent + '66')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
+            >
+              <div style={{ color: C.text, fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                {repo.id}
+              </div>
+              <div style={{ display: 'flex', gap: 14, fontSize: 11, color: C.dim }}>
+                <span>Downloads: {fmtCount(repo.downloads)}</span>
+                <span>Likes: {fmtCount(repo.likes)}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── File picker ─────────────────────────────────────────── */}
+      {view === 'files' && selectedRepo && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <button onClick={() => setView('search')} style={backBtnStyle}>Back</button>
+            <span style={{ color: C.accent, fontSize: 12, fontWeight: 600 }}>{selectedRepo.id}</span>
+          </div>
+
+          {loadingFiles && (
+            <div style={{ color: C.dim, fontSize: 12, padding: 20, textAlign: 'center' }}>Loading files…</div>
+          )}
+
+          {!loadingFiles && files.length === 0 && (
+            <div style={{ color: C.dim, fontSize: 12, padding: 20, textAlign: 'center' }}>
+              No .gguf files found in this repository.
+            </div>
+          )}
+
+          {!loadingFiles && files.length > 0 && (() => {
+            const recommended = files.find(f => extractQuant(f.rfilename) === RECOMMENDED_QUANT)
+            const keyQuants = new Set(['Q2_K', 'Q4_K_M', 'Q5_K_M', 'Q8_0'])
+            const filteredFiles = showAllFiles
+              ? files
+              : files.filter(f => { const q = extractQuant(f.rfilename); return q ? keyQuants.has(q) : false })
+            const displayFiles = filteredFiles.length >= 2 ? filteredFiles : files
+            const isFiltered = displayFiles.length < files.length
+
+            return (
+              <div>
+                {recommended && !showAllFiles && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>Recommended for you:</div>
+                    <button
+                      onClick={() => selectFileForPreview(recommended)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', textAlign: 'left',
+                        background: C.accent + '11', border: `1px solid ${C.accent}44`,
+                        borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+                        transition: 'border-color 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = C.accent + '44')}
+                    >
+                      <div>
+                        <div style={{ color: C.accent, fontSize: 13, fontWeight: 600, fontFamily: 'monospace', marginBottom: 4 }}>
+                          {recommended.rfilename}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.dim }}>
+                          {QUANT_TABLE[RECOMMENDED_QUANT]?.label ?? 'Best balance of size & quality'}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                        <div style={{ color: C.text, fontSize: 12 }}>
+                          {recommended.size > 0 ? fmt(recommended.size) : ''}
+                        </div>
+                        <div style={{ color: C.accent, fontSize: 10, marginTop: 2 }}>Select</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>
+                  {showAllFiles ? `All variants (${files.length}):` : 'Other variants:'}
+                </div>
+
+                {displayFiles.map(f => {
+                  const quant = extractQuant(f.rfilename)
+                  const info = quant ? getQuantInfo(quant) : null
+                  const isRecommended = quant === RECOMMENDED_QUANT
+                  if (!showAllFiles && isRecommended && recommended) return null
+
+                  return (
+                    <button
+                      key={f.rfilename}
+                      onClick={() => selectFileForPreview(f)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', textAlign: 'left',
+                        background: C.surface, border: `1px solid ${C.border}`,
+                        borderRadius: 8, padding: '10px 14px', marginBottom: 4, cursor: 'pointer',
+                        transition: 'border-color 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent + '66')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                          <span style={{
+                            color: C.text, fontSize: 12, fontFamily: 'monospace',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {f.rfilename}
+                          </span>
+                          {info && (
+                            <span style={{
+                              fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                              background: qualityColor[info.quality] + '18',
+                              color: qualityColor[info.quality],
+                              border: `1px solid ${qualityColor[info.quality]}33`,
+                              flexShrink: 0,
+                            }}>
+                              {info.quality}
+                            </span>
+                          )}
+                        </div>
+                        {info && <div style={{ fontSize: 10, color: C.dim }}>{info.label}</div>}
+                      </div>
+                      <span style={{ color: C.dim, fontSize: 11, flexShrink: 0, marginLeft: 12 }}>
+                        {f.size > 0 ? fmt(f.size) : ''}
+                      </span>
+                    </button>
+                  )
+                })}
+
+                {isFiltered && (
+                  <button
+                    onClick={() => setShowAllFiles(true)}
+                    style={{
+                      display: 'block', width: '100%', marginTop: 8,
+                      background: 'transparent', color: C.dim,
+                      border: `1px dashed ${C.border}`, borderRadius: 8,
+                      padding: '8px', fontSize: 11, cursor: 'pointer', textAlign: 'center',
+                    }}
+                  >
+                    Show all {files.length} variants
+                  </button>
+                )}
+                {showAllFiles && files.length > 4 && (
+                  <button
+                    onClick={() => setShowAllFiles(false)}
+                    style={{
+                      display: 'block', width: '100%', marginTop: 8,
+                      background: 'transparent', color: C.dim,
+                      border: `1px dashed ${C.border}`, borderRadius: 8,
+                      padding: '8px', fontSize: 11, cursor: 'pointer', textAlign: 'center',
+                    }}
+                  >
+                    Show fewer
+                  </button>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* ── Preview: block picker before download ───────────────── */}
+      {view === 'preview' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <button onClick={() => setView('files')} style={backBtnStyle}>Back</button>
+            <span style={{ color: C.accent, fontSize: 12, fontWeight: 600 }}>{selectedRepo?.id}</span>
+          </div>
+
+          {previewLoading && (
+            <div style={{ color: C.dim, fontSize: 12, padding: 40, textAlign: 'center' }}>
+              Downloading model header…
+            </div>
+          )}
+
+          {preview && !previewLoading && (
+            <div>
+              <div style={{
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 10, padding: 14, fontFamily: 'monospace', fontSize: 12, marginBottom: 16,
+              }}>
+                <div style={{ color: C.accent, fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
+                  {selectedFile?.rfilename}
+                </div>
+                {([
+                  ['Architecture', preview.architecture],
+                  ['Total blocks', preview.totalBlocks],
+                  ['Hidden size', preview.hiddenSize],
+                  ['Heads', preview.headCount],
+                  ['Full model', fmt(estimate?.fullSize ?? selectedFile?.size ?? 0)],
+                ] as [string, string | number][]).map(([label, value]) => (
+                  <div key={label} style={{
+                    display: 'flex', justifyContent: 'space-between',
+                    padding: '3px 0', borderBottom: `1px solid ${C.border}`,
+                  }}>
+                    <span style={{ color: C.dim }}>{label}</span>
+                    <span style={{ color: C.text }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{
+                background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 10, padding: 14, marginBottom: 16,
+              }}>
+                <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 10 }}>
+                  Select blocks to download
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
+                  Only download the transformer blocks you want to host. Other peers can host the rest.
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                  <label style={{ color: C.dim, fontSize: 12 }}>Start</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={preview.totalBlocks - 1}
+                    value={pBlockStart}
+                    onChange={e => {
+                      const v = Math.max(0, Math.min(Number(e.target.value), preview.totalBlocks - 1))
+                      updateEstimate(v, Math.max(v, pBlockEnd))
+                    }}
+                    style={numInputStyle}
+                  />
+                  <label style={{ color: C.dim, fontSize: 12 }}>End</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={preview.totalBlocks - 1}
+                    value={pBlockEnd}
+                    onChange={e => {
+                      const v = Math.max(pBlockStart, Math.min(Number(e.target.value), preview.totalBlocks - 1))
+                      updateEstimate(pBlockStart, v)
+                    }}
+                    style={numInputStyle}
+                  />
+                  <span style={{ color: C.dim, fontSize: 11 }}>
+                    {pBlockEnd - pBlockStart + 1} of {preview.totalBlocks} blocks
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
+                  {Array.from({ length: preview.totalBlocks }, (_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1, height: 14, borderRadius: 2,
+                        background: i >= pBlockStart && i <= pBlockEnd ? C.accent : C.border,
+                        opacity: i >= pBlockStart && i <= pBlockEnd ? 1 : 0.4,
+                        transition: 'background 0.15s, opacity 0.15s',
+                      }}
+                      title={`Block ${i}`}
+                    />
+                  ))}
+                </div>
+
+                {estimate && (
+                  <div style={{
+                    background: C.green + '11', border: `1px solid ${C.green}33`,
+                    borderRadius: 8, padding: '10px 14px', fontSize: 12,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: C.dim }}>Partial download</span>
+                      <span style={{ color: C.green, fontWeight: 600 }}>{fmt(estimate.partialSize)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: C.dim }}>Full model</span>
+                      <span style={{ color: C.dim }}>{fmt(estimate.fullSize)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: C.dim }}>Savings</span>
+                      <span style={{ color: C.green, fontWeight: 600 }}>
+                        {Math.round(estimate.savedPercent)}% smaller
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => startPartialDownload(false)}
+                style={{
+                  display: 'block', width: '100%', marginBottom: 8,
+                  background: C.accent, color: '#fff', border: 'none',
+                  borderRadius: 8, padding: '12px 20px', fontSize: 13,
+                  cursor: 'pointer', fontWeight: 600,
+                }}
+              >
+                Download {pBlockEnd - pBlockStart + 1} blocks
+                {estimate ? ` (${fmt(estimate.partialSize)})` : ''}
+              </button>
+
+              <button
+                onClick={() => startPartialDownload(true)}
+                style={{
+                  display: 'block', width: '100%',
+                  background: 'transparent', color: C.dim,
+                  border: `1px solid ${C.border}`, borderRadius: 8,
+                  padding: '10px 20px', fontSize: 12, cursor: 'pointer',
+                }}
+              >
+                Download full model instead ({fmt(estimate?.fullSize ?? selectedFile?.size ?? 0)})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Downloading ─────────────────────────────────────────── */}
+      {view === 'downloading' && (
+        <div>
+          <div style={{
+            background: C.surface, border: `1px solid ${C.border}`,
+            borderRadius: 10, padding: 20, textAlign: 'center',
+          }}>
+            <div style={{ color: C.text, fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+              Downloading from Hugging Face
+            </div>
+            <div style={{ color: C.dim, fontSize: 11, marginBottom: 16, fontFamily: 'monospace' }}>
+              {progress?.file ?? '…'}
+            </div>
+
+            <div style={{
+              width: '100%', height: 8, background: C.border,
+              borderRadius: 4, overflow: 'hidden', marginBottom: 8,
+            }}>
+              <div style={{
+                width: `${progress?.percent ?? 0}%`, height: '100%',
+                background: C.accent, borderRadius: 4,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              fontSize: 11, color: C.dim, marginBottom: 16,
+            }}>
+              <span>{progress ? fmt(progress.downloadedBytes) : '0 KB'}</span>
+              <span>{progress?.percent ?? 0}%</span>
+              <span>{progress ? fmt(progress.totalBytes) : '?'}</span>
+            </div>
+
+            <button
+              onClick={cancelDownload}
+              style={{
+                background: 'transparent', color: C.red,
+                border: `1px solid ${C.red}44`,
+                borderRadius: 8, padding: '8px 18px', fontSize: 12, cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Shared styles ───────────────────────────────────────────────────────────────
+
+const backBtnStyle: React.CSSProperties = {
+  background: 'transparent', color: C.dim,
+  border: `1px solid ${C.border}`, borderRadius: 6,
+  padding: '4px 12px', fontSize: 11, cursor: 'pointer',
+}
+
+const numInputStyle: React.CSSProperties = {
+  width: 60, background: C.surface, color: C.text,
+  border: `1px solid ${C.border}`, borderRadius: 6,
+  padding: '6px 8px', fontSize: 12, textAlign: 'center',
+  outline: 'none',
+}

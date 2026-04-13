@@ -10,7 +10,7 @@ const MODEL_PATH = join(import.meta.dir, 'fixtures', '_tiny-test.gguf')
 // ── Addon loads ───────────────────────────────────────────────────────────────
 describe('native addon', () => {
   it('loads and exposes hello()', () => {
-    expect(getNative().hello()).toBe('coral-native ready')
+    expect(getNative().hello()).toBe('opencoral-native ready')
   })
 })
 

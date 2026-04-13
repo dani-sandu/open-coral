@@ -12,7 +12,7 @@ export interface PeerBlockInfo {
 
 /** Deterministic CID for a single block index, used as the DHT content-routing key. */
 async function singleBlockCID(index: number): Promise<CID> {
-  const key = new TextEncoder().encode(`coral/block/${index}`)
+  const key = new TextEncoder().encode(`opencoral/block/${index}`)
   const hash = await sha256.digest(key)
   return CID.createV1(RAW, hash)
 }

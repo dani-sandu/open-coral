@@ -60,7 +60,7 @@ function loadModelInfo(filePath: string): { info: ModelInfo; header: GGUFHeader 
   // Read HuggingFace identity from sidecar if present
   let repoId: string | undefined
   let hfFilename: string | undefined
-  const sidecarPath = filePath + '.coral-meta.json'
+  const sidecarPath = filePath + '.opencoral-meta.json'
   try {
     const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'))
     repoId    = typeof sidecar.repoId    === 'string' ? sidecar.repoId    : undefined
@@ -95,7 +95,7 @@ function loadAndSet(filePath: string, repoId: string, hfFilename: string): Model
 }
 
 export function setupModelIPC(): void {
-  ipcMain.handle('coral:select-model', async (): Promise<ModelInfo | null> => {
+  ipcMain.handle('opencoral:select-model', async (): Promise<ModelInfo | null> => {
     const result = await dialog.showOpenDialog({
       title: 'Select GGUF Model File',
       filters: [{ name: 'GGUF Models', extensions: ['gguf'] }],
@@ -109,16 +109,16 @@ export function setupModelIPC(): void {
     return currentModel
   })
 
-  ipcMain.handle('coral:load-model-path', async (_event, filePath: string): Promise<ModelInfo> => {
+  ipcMain.handle('opencoral:load-model-path', async (_event, filePath: string): Promise<ModelInfo> => {
     const loaded = loadModelInfo(filePath)
     currentModel = loaded.info
     currentGGUFHeader = loaded.header
     return currentModel
   })
 
-  ipcMain.handle('coral:get-model', (): ModelInfo | null => currentModel)
+  ipcMain.handle('opencoral:get-model', (): ModelInfo | null => currentModel)
 
-  ipcMain.handle('coral:load-model-by-hf-identity', async (
+  ipcMain.handle('opencoral:load-model-by-hf-identity', async (
     _event,
     repoId: string,
     hfFilename: string,
@@ -136,15 +136,15 @@ export function setupModelIPC(): void {
       return loadAndSet(exact, repoId, hfFilename)
     }
 
-    // Scan for matching .coral-meta.json sidecar (covers partial downloads with renamed files)
-    const files = readdirSync(modelsDir).filter(f => f.endsWith('.coral-meta.json'))
+    // Scan for matching .opencoral-meta.json sidecar (covers partial downloads with renamed files)
+    const files = readdirSync(modelsDir).filter(f => f.endsWith('.opencoral-meta.json'))
     for (const sidecarFile of files) {
       const sidecarPath = join(modelsDir, sidecarFile)
       try {
         const meta = JSON.parse(readFileSync(sidecarPath, 'utf-8'))
         if (meta.repoId === repoId && meta.hfFilename === hfFilename) {
-          // The GGUF file path = sidecar path minus '.coral-meta.json'
-          const ggufPath = sidecarPath.slice(0, -'.coral-meta.json'.length)
+          // The GGUF file path = sidecar path minus '.opencoral-meta.json'
+          const ggufPath = sidecarPath.slice(0, -'.opencoral-meta.json'.length)
           if (existsSync(ggufPath)) {
             return loadAndSet(ggufPath, repoId, hfFilename)
           }
@@ -156,6 +156,112 @@ export function setupModelIPC(): void {
 
     throw new Error(`Model file not found locally: ${hfFilename}`)
   })
+
+  ipcMain.handle('opencoral:list-local-models', (): LocalModelEntry[] => {
+    return listLocalModels()
+  })
+}
+
+export interface LocalModelEntry {
+  path: string
+  filename: string
+  architecture: string
+  totalBlocks: number
+  hiddenSize: number
+  headCount: number
+  fileSizeBytes: number
+  repoId?: string
+  hfFilename?: string
+  /** Block range present in the file (null = full model) */
+  blockStart: number | null
+  blockEnd: number | null
+}
+
+// Cache parsed model entries by file path + mtime to avoid re-reading 80MB headers on every call
+const modelCache = new Map<string, { mtimeMs: number; entry: LocalModelEntry }>()
+
+/**
+ * Scan the userData/models directory and return metadata about every downloaded GGUF file.
+ * Uses an mtime-based cache so unchanged files are not re-parsed.
+ */
+export function listLocalModels(): LocalModelEntry[] {
+  const dir = join(app.getPath('userData'), 'models')
+  if (!existsSync(dir)) return []
+
+  const entries: LocalModelEntry[] = []
+  const ggufFiles = readdirSync(dir).filter(f => f.endsWith('.gguf'))
+  const seenPaths = new Set<string>()
+
+  for (const file of ggufFiles) {
+    const filePath = join(dir, file)
+    seenPaths.add(filePath)
+    try {
+      const stat = statSync(filePath)
+
+      // Check cache — skip parsing if file hasn't changed
+      const cached = modelCache.get(filePath)
+      if (cached && cached.mtimeMs === stat.mtimeMs) {
+        entries.push(cached.entry)
+        continue
+      }
+
+      const fd = openSync(filePath, 'r')
+      const readSize = Math.min(80 * 1024 * 1024, stat.size)
+      const headerBuf = Buffer.allocUnsafe(readSize)
+      readSync(fd, headerBuf, 0, headerBuf.length, 0)
+      closeSync(fd)
+
+      const header = parseGGUFHeader(headerBuf)
+      const metaGet = (key: string): unknown => header.metadata.find(m => m.key === key)?.value ?? null
+
+      const architecture = (metaGet('general.architecture') as string | null) ?? 'unknown'
+      const prefix = architecture === 'unknown' ? 'llama' : architecture
+      const hiddenSize = Number(metaGet(`${prefix}.embedding_length`) ?? metaGet('llama.embedding_length') ?? 0)
+      const headCount = Number(metaGet(`${prefix}.attention.head_count`) ?? metaGet('llama.attention.head_count') ?? 0)
+      const blockCountFromMeta = Number(metaGet(`${prefix}.block_count`) ?? metaGet('llama.block_count') ?? 0)
+      const totalBlocks = blockCountFromMeta > 0 ? blockCountFromMeta : countBlocks(header)
+
+      let repoId: string | undefined
+      let hfFilename: string | undefined
+      let blockStart: number | null = null
+      let blockEnd: number | null = null
+
+      const sidecarPath = filePath + '.opencoral-meta.json'
+      try {
+        const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'))
+        repoId     = typeof sidecar.repoId     === 'string' ? sidecar.repoId     : undefined
+        hfFilename = typeof sidecar.hfFilename  === 'string' ? sidecar.hfFilename  : undefined
+        blockStart = typeof sidecar.blockStart  === 'number' ? sidecar.blockStart  : null
+        blockEnd   = typeof sidecar.blockEnd    === 'number' ? sidecar.blockEnd    : null
+      } catch { /* ENOENT or parse error — no sidecar */ }
+
+      const entry: LocalModelEntry = {
+        path: filePath,
+        filename: file,
+        architecture,
+        totalBlocks,
+        hiddenSize,
+        headCount,
+        fileSizeBytes: stat.size,
+        repoId,
+        hfFilename,
+        blockStart,
+        blockEnd,
+      }
+
+      modelCache.set(filePath, { mtimeMs: stat.mtimeMs, entry })
+      entries.push(entry)
+    } catch {
+      // Skip files that fail to parse
+    }
+  }
+
+  // Evict stale cache entries
+  for (const key of modelCache.keys()) {
+    if (!seenPaths.has(key)) modelCache.delete(key)
+  }
+
+  return entries
 }
 
 export function getCurrentModel(): ModelInfo | null {

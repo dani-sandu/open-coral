@@ -59,7 +59,7 @@ function modelsDir(): string {
 async function fetchJSON<T>(url: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith('https') ? https : http
-    proto.get(url, { headers: { 'User-Agent': 'Coral/0.1' } }, (res) => {
+    proto.get(url, { headers: { 'User-Agent': 'OpenCoral/0.1' } }, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return fetchJSON<T>(res.headers.location).then(resolve, reject)
       }
@@ -130,7 +130,7 @@ function downloadFile(
 
     function follow(u: string): void {
       const proto = u.startsWith('https') ? https : http
-      req = proto.get(u, { headers: { 'User-Agent': 'Coral/0.1' } }, (res) => {
+      req = proto.get(u, { headers: { 'User-Agent': 'OpenCoral/0.1' } }, (res) => {
         if (aborted) return
 
         // Follow redirects (HF CDN uses 302)
@@ -188,16 +188,16 @@ function downloadFile(
 // ── IPC handlers ────────────────────────────────────────────────────────────────
 
 export function setupHuggingFaceIPC(): void {
-  ipcMain.handle('coral:hf-search', async (_event, query: string): Promise<HFModelResult[]> => {
+  ipcMain.handle('opencoral:hf-search', async (_event, query: string): Promise<HFModelResult[]> => {
     if (!query || query.trim().length < 2) return []
     return searchModels(query.trim())
   })
 
-  ipcMain.handle('coral:hf-list-files', async (_event, repoId: string): Promise<HFFileInfo[]> => {
+  ipcMain.handle('opencoral:hf-list-files', async (_event, repoId: string): Promise<HFFileInfo[]> => {
     return listGGUFFiles(repoId)
   })
 
-  ipcMain.handle('coral:hf-download', async (
+  ipcMain.handle('opencoral:hf-download', async (
     _event,
     repoId: string,
     filename: string,
@@ -218,7 +218,7 @@ export function setupHuggingFaceIPC(): void {
       activeDownload = null
       // Write HF identity sidecar
       const fullMeta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null }
-      writeFileSync(localPath + '.coral-meta.json', JSON.stringify(fullMeta, null, 2), 'utf-8')
+      writeFileSync(localPath + '.opencoral-meta.json', JSON.stringify(fullMeta, null, 2), 'utf-8')
       return localPath
     } catch (err) {
       activeDownload = null
@@ -226,11 +226,11 @@ export function setupHuggingFaceIPC(): void {
     }
   })
 
-  ipcMain.handle('coral:hf-download-progress', (): DownloadProgress | null => {
+  ipcMain.handle('opencoral:hf-download-progress', (): DownloadProgress | null => {
     return lastProgress
   })
 
-  ipcMain.handle('coral:hf-cancel-download', (): void => {
+  ipcMain.handle('opencoral:hf-cancel-download', (): void => {
     if (activeDownload) {
       activeDownload.abort()
       activeDownload = null
@@ -242,7 +242,7 @@ export function setupHuggingFaceIPC(): void {
 
   // ── Partial download: header preview ─────────────────────────────────────
 
-  ipcMain.handle('coral:hf-preview-model', async (
+  ipcMain.handle('opencoral:hf-preview-model', async (
     _event,
     repoId: string,
     filename: string,
@@ -283,12 +283,12 @@ export function setupHuggingFaceIPC(): void {
 
   // ── Partial download: download only selected blocks ──────────────────────
 
-  ipcMain.handle('coral:hf-estimate-blocks', async (
+  ipcMain.handle('opencoral:hf-estimate-blocks', async (
     _event,
     blockStart: number,
     blockEnd: number,
   ): Promise<{ partialSize: number; fullSize: number; savedPercent: number }> => {
-    if (!cachedHeader) throw new Error('Call coral:hf-preview-model first')
+    if (!cachedHeader) throw new Error('Call opencoral:hf-preview-model first')
     const total = countBlocks(cachedHeader)
     const extracted = extractBlockTensors(cachedHeader, { start: blockStart, end: blockEnd }, total)
     const allTensors = [
@@ -304,14 +304,14 @@ export function setupHuggingFaceIPC(): void {
     return { partialSize, fullSize, savedPercent }
   })
 
-  ipcMain.handle('coral:hf-download-partial', async (
+  ipcMain.handle('opencoral:hf-download-partial', async (
     _event,
     repoId: string,
     filename: string,
     blockStart: number,
     blockEnd: number,
   ): Promise<string> => {
-    if (!cachedHeader || !cachedHeaderBuf) throw new Error('Call coral:hf-preview-model first')
+    if (!cachedHeader || !cachedHeaderBuf) throw new Error('Call opencoral:hf-preview-model first')
 
     if (activeDownload) {
       activeDownload.abort()
@@ -367,7 +367,7 @@ export function setupHuggingFaceIPC(): void {
 
       // Write HF identity sidecar
       const meta = { repoId, hfFilename: filename, blockStart, blockEnd }
-      writeFileSync(localPath + '.coral-meta.json', JSON.stringify(meta, null, 2), 'utf-8')
+      writeFileSync(localPath + '.opencoral-meta.json', JSON.stringify(meta, null, 2), 'utf-8')
 
       lastProgress = { file: partialName, downloadedBytes: downloaded, totalBytes: totalDownload, percent: 100, done: true, localPath }
       activeDownload = null
@@ -400,7 +400,7 @@ function downloadRange(
       const proto = u.startsWith('https') ? https : http
       proto.get(u, {
         headers: {
-          'User-Agent': 'Coral/0.1',
+          'User-Agent': 'OpenCoral/0.1',
           'Range': `bytes=${rangeStart}-${rangeEnd}`,
         },
       }, (res) => {

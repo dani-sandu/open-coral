@@ -100,20 +100,20 @@ export default function ModelPanel(): React.JSX.Element {
 
   // Load existing model on mount
   useEffect(() => {
-    window.coral.getModel().then(m => { if (m) setModel(m) })
+    window.opencoral.getModel().then(m => { if (m) setModel(m) })
   }, [])
 
   // Poll download progress
   useEffect(() => {
     if (!downloading) return
     pollRef.current = setInterval(async () => {
-      const p = await window.coral.hfDownloadProgress()
+      const p = await window.opencoral.hfDownloadProgress()
       if (p) setProgress(p)
       if (p?.done) {
         setDownloading(false)
         if (p.localPath && !p.error) {
           try {
-            const m = await window.coral.loadModelPath(p.localPath)
+            const m = await window.opencoral.loadModelPath(p.localPath)
             setModel(m)
             setView('home')
           } catch (e) {
@@ -133,7 +133,7 @@ export default function ModelPanel(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const m = await window.coral.selectModel()
+      const m = await window.opencoral.selectModel()
       if (m) setModel(m)
     } catch (e) {
       setError(String(e))
@@ -147,7 +147,7 @@ export default function ModelPanel(): React.JSX.Element {
     setSearching(true)
     setError(null)
     try {
-      const r = await window.coral.hfSearch(query.trim())
+      const r = await window.opencoral.hfSearch(query.trim())
       setResults(r)
       setView('search')
     } catch (e) {
@@ -163,7 +163,7 @@ export default function ModelPanel(): React.JSX.Element {
     setError(null)
     setShowAllFiles(false)
     try {
-      const f = await window.coral.hfListFiles(repo.id)
+      const f = await window.opencoral.hfListFiles(repo.id)
       // Sort by quantization quality rank, recommended first
       f.sort((a, b) => {
         const qa = extractQuant(a.rfilename)
@@ -182,7 +182,7 @@ export default function ModelPanel(): React.JSX.Element {
   }, [])
 
   const cancelDownload = useCallback(async () => {
-    await window.coral.hfCancelDownload()
+    await window.opencoral.hfCancelDownload()
     setDownloading(false)
     setView('files')
   }, [])
@@ -196,12 +196,12 @@ export default function ModelPanel(): React.JSX.Element {
     setError(null)
     setView('preview')
     try {
-      const p = await window.coral.hfPreviewModel(selectedRepo.id, file.rfilename)
+      const p = await window.opencoral.hfPreviewModel(selectedRepo.id, file.rfilename)
       setPreview(p)
       setPBlockStart(0)
       setPBlockEnd(Math.min(3, p.totalBlocks - 1))
       // Auto-estimate for initial range
-      const est = await window.coral.hfEstimateBlocks(0, Math.min(3, p.totalBlocks - 1))
+      const est = await window.opencoral.hfEstimateBlocks(0, Math.min(3, p.totalBlocks - 1))
       setEstimate(est)
     } catch (e) {
       setError(String(e))
@@ -215,7 +215,7 @@ export default function ModelPanel(): React.JSX.Element {
     setPBlockStart(start)
     setPBlockEnd(end)
     try {
-      const est = await window.coral.hfEstimateBlocks(start, end)
+      const est = await window.opencoral.hfEstimateBlocks(start, end)
       setEstimate(est)
     } catch {
       setEstimate(null)
@@ -230,9 +230,9 @@ export default function ModelPanel(): React.JSX.Element {
     setView('downloading')
     try {
       if (full) {
-        await window.coral.hfDownload(selectedRepo.id, selectedFile.rfilename)
+        await window.opencoral.hfDownload(selectedRepo.id, selectedFile.rfilename)
       } else {
-        await window.coral.hfDownloadPartial(selectedRepo.id, selectedFile.rfilename, pBlockStart, pBlockEnd)
+        await window.opencoral.hfDownloadPartial(selectedRepo.id, selectedFile.rfilename, pBlockStart, pBlockEnd)
       }
     } catch (e) {
       setError(String(e))

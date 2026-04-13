@@ -1,7 +1,7 @@
 import type { Libp2p } from 'libp2p'
 import type { PeerId, Stream } from '@libp2p/interface'
 
-export const INFERENCE_PROTOCOL = '/coral/inference/1.0.0'
+export const INFERENCE_PROTOCOL = '/opencoral/inference/1.0.0'
 
 export type InferenceHandler = (
   input: Float32Array,

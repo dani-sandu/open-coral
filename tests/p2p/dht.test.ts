@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createCoralNode, type CoralNode } from '../../src/p2p/node'
+import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import { announceBlocks, findPeerForBlock, clearBlocks } from '../../src/p2p/dht'
 
 describe('DHT block announcements', () => {
-  let nodeA: CoralNode
-  let nodeB: CoralNode
+  let nodeA: OpenCoralNode
+  let nodeB: OpenCoralNode
 
   beforeAll(async () => {
-    nodeA = await createCoralNode()
-    nodeB = await createCoralNode()
+    nodeA = await createOpenCoralNode()
+    nodeB = await createOpenCoralNode()
     // Connect A ↔ B so they share a routing table
     await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
     // Give DHT time to bootstrap (exchange routing tables)

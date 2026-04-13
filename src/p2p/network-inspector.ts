@@ -1,4 +1,13 @@
-import type { CoralNode } from './node'
+import type { OpenCoralNode } from './node'
+
+export interface PeerModelInfo {
+  repoId: string
+  hfFilename: string
+  blockStart: number
+  blockEnd: number
+  totalBlocks: number
+  architecture: string
+}
 
 export interface NetworkPeer {
   peerId: string
@@ -6,6 +15,7 @@ export interface NetworkPeer {
   blockRanges: { start: number; end: number }[]
   isLocal: boolean
   connected: boolean
+  modelInfo?: PeerModelInfo
 }
 
 export interface NetworkConnection {
@@ -27,13 +37,16 @@ export interface NetworkState {
  * Shows the local node, all connected peers, and announced block ranges.
  */
 export function inspectNetwork(
-  node: CoralNode,
+  node: OpenCoralNode,
   localBlocks: { start: number; end: number }[] = [],
+  peerModelMap: Map<string, PeerModelInfo> = new Map(),
 ): NetworkState {
   const libp2p = node.libp2p
   const localPeerId = node.peerId
 
   const connectedPeerIds = libp2p.getPeers()
+
+  const localModelInfo = peerModelMap.get(localPeerId)
 
   const peers: NetworkPeer[] = [
     {
@@ -42,6 +55,7 @@ export function inspectNetwork(
       blockRanges: localBlocks,
       isLocal: true,
       connected: true,
+      modelInfo: localModelInfo,
     },
   ]
 
@@ -51,13 +65,15 @@ export function inspectNetwork(
     const peerIdStr = remotePeerId.toString()
     const conns = libp2p.getConnections(remotePeerId)
     const addrs = conns.map(c => c.remoteAddr.toString())
+    const remoteModelInfo = peerModelMap.get(peerIdStr)
 
     peers.push({
       peerId: peerIdStr,
       multiaddrs: addrs,
-      blockRanges: [], // populated when peers announce via BlockRegistry
+      blockRanges: remoteModelInfo ? [{ start: remoteModelInfo.blockStart, end: remoteModelInfo.blockEnd }] : [],
       isLocal: false,
       connected: true,
+      modelInfo: remoteModelInfo,
     })
 
     connections.push({

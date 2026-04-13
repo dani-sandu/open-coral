@@ -1,7 +1,16 @@
 import { createRequire } from 'module'
+import { join } from 'path'
 
 // createRequire gives us a require() that resolves from this file's directory
 const _require = createRequire(import.meta.url)
+
+function isPackaged(): boolean {
+  try {
+    return require('electron').app.isPackaged
+  } catch {
+    return false
+  }
+}
 
 export interface CoralNative {
   hello(): string
@@ -18,10 +27,18 @@ export interface CoralNative {
 
 let _cached: CoralNative | null = null
 
+/** Resolve the absolute path to the native addon without loading it. */
+export function getNativePath(): string {
+  if (isPackaged()) {
+    return join(process.resourcesPath, 'native', 'coral_native.node')
+  }
+  return new URL('../../native/build/Release/coral_native.node', import.meta.url)
+    .pathname.replace(/^\/([A-Za-z]:)/, '$1')
+}
+
 export function getNative(): CoralNative {
   if (!_cached) {
-    const addonPath = new URL('../../native/build/Release/coral_native.node', import.meta.url)
-      .pathname.replace(/^\/([A-Za-z]:)/, '$1')
+    const addonPath = getNativePath()
     try {
       _cached = _require(addonPath) as CoralNative
     } catch {

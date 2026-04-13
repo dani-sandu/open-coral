@@ -1,5 +1,5 @@
 {
-  "name": "coral",
+  "name": "opencoral",
   "version": "0.1.0",
   "description": "Decentralized LLM desktop client",
   "main": "out/main/index.js",
@@ -8,8 +8,13 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "bun test",
-    "build:native": "cmake-js build --directory native --out native/build",
-    "clean:native": "cmake-js clean --directory native --out native/build"
+    "build:native": "cmake-js build --directory native --out native/build --runtime=electron --runtime-version=33.0.0 --arch=x64",
+    "clean:native": "cmake-js clean --directory native --out native/build",
+    "pack": "npm run build:native && electron-vite build && electron-builder --dir",
+    "dist": "npm run build:native && electron-vite build && electron-builder",
+    "dist:win": "npm run dist -- --win",
+    "dist:mac": "npm run dist -- --mac",
+    "dist:linux": "npm run dist -- --linux"
   },
   "cmake-js": {
     "directory": "native",
@@ -29,6 +34,41 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
+  "build": {
+    "appId": "com.opencoral.app",
+    "productName": "OpenCoral",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "!node_modules"
+    ],
+    "extraResources": [
+      {
+        "from": "native/build/Release/coral_native.node",
+        "to": "native/coral_native.node"
+      }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
@@ -36,6 +76,7 @@
     "@vitejs/plugin-react": "^4.2.0",
     "cmake-js": "^8.0.0",
     "electron": "33",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "node-addon-api": "^8.7.0",
     "typescript": "^6.0.2",

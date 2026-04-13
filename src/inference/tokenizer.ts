@@ -80,6 +80,62 @@ export function createTokenizer(header: GGUFHeader): Tokenizer {
     if (t.length > maxTokenLen) maxTokenLen = t.length
   }
 
+  // Parse BPE merge list from GGUF metadata.
+  // Each entry is "tokenA tokenB" — the pair to merge. Priority = index (lower = higher priority).
+  const mergeList = metaGet('tokenizer.ggml.merges') as string[] | null
+  const mergePriority = new Map<string, number>()
+  if (Array.isArray(mergeList)) {
+    for (let i = 0; i < mergeList.length; i++) {
+      mergePriority.set(mergeList[i], i)
+    }
+  }
+  const hasMerges = mergePriority.size > 0
+
+  /**
+   * BPE tokenise a pre-normalised string.
+   * Iteratively applies the highest-priority merge until no merges remain.
+   */
+  function bpeTokenize(text: string): number[] {
+    let symbols: string[] = [...text]
+
+    while (symbols.length > 1) {
+      let bestPriority = Infinity
+      let bestI = -1
+
+      for (let i = 0; i < symbols.length - 1; i++) {
+        const key = `${symbols[i]} ${symbols[i + 1]}`
+        const priority = mergePriority.get(key)
+        if (priority !== undefined && priority < bestPriority) {
+          bestPriority = priority
+          bestI = i
+        }
+      }
+
+      if (bestI === -1) break
+
+      symbols = [
+        ...symbols.slice(0, bestI),
+        symbols[bestI] + symbols[bestI + 1],
+        ...symbols.slice(bestI + 2),
+      ]
+    }
+
+    const ids: number[] = []
+    for (const sym of symbols) {
+      const id = tokenToId.get(sym)
+      if (id !== undefined) {
+        ids.push(id)
+      } else {
+        const bytes = new TextEncoder().encode(sym)
+        for (const b of bytes) {
+          const byteId = byteTokenId.get(b)
+          if (byteId !== undefined) ids.push(byteId)
+        }
+      }
+    }
+    return ids
+  }
+
   /**
    * Core greedy longest-match tokenizer. The input text should already have
    * spaces replaced with ▁ where appropriate.
@@ -130,7 +186,8 @@ export function createTokenizer(header: GGUFHeader): Tokenizer {
   }
 
   function tokenizeSegment(text: string): number[] {
-    return tokenizeNormalized(normalizeForVocab(text))
+    const normalised = normalizeForVocab(text)
+    return hasMerges ? bpeTokenize(normalised) : tokenizeNormalized(normalised)
   }
 
   function encode(text: string): Int32Array {
