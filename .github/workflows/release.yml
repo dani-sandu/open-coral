@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -28,10 +29,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
@@ -40,15 +43,15 @@ jobs:
           sudo apt-get install -y cmake build-essential
 
       - name: Build native addon
-        run: npm run build:native -- --CDGGML_NATIVE=OFF
+        run: bun run build:native -- --CDGGML_NATIVE=OFF
         env:
           CMAKE_BUILD_TYPE: Release
 
       - name: Build Electron app
-        run: npx electron-vite build
+        run: bunx electron-vite build
 
       - name: Package for ${{ matrix.platform }}
-        run: npx electron-builder --${{ matrix.platform }}
+        run: bunx electron-builder --${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS code signing (set these secrets in repo settings)
