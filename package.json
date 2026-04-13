@@ -2,6 +2,10 @@
   "name": "opencoral",
   "version": "0.1.0",
   "description": "Decentralized LLM desktop client",
+  "author": {
+    "name": "OpenCoral Contributors",
+    "email": "opencoral@proton.me"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
