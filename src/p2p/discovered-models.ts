@@ -28,6 +28,13 @@ export class DiscoveredModels {
     this.peers.delete(peerId)
   }
 
+  /** Return the block range for a specific peer, or null if not known. */
+  getPeerRange(peerId: string): { blockStart: number; blockEnd: number } | null {
+    const info = this.peers.get(peerId)
+    if (!info) return null
+    return { blockStart: info.blockStart, blockEnd: info.blockEnd }
+  }
+
   list(): { peerId: string; info: PeerModelInfoPayload }[] {
     return [...this.peers.entries()].map(([peerId, info]) => ({ peerId, info }))
   }
