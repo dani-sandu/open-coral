@@ -9,17 +9,25 @@ import { registerModelInfoHandler, queryPeerModelInfo } from '../p2p/model-annou
 import { DiscoveredModels } from '../p2p/discovered-models'
 import type { NetworkModelEntry } from '../p2p/discovered-models'
 import { PeerLatencyTracker } from '../p2p/peer-latency'
+import { loadOrCreateIdentity } from './identity'
+import type { NodeIdentity } from './identity'
 
 let openCoralNode: OpenCoralNode | null = null
 let localBlocks: { start: number; end: number }[] = []
 const discoveredModels = new DiscoveredModels()
 const latencyTracker = new PeerLatencyTracker()
+let nodeIdentity: NodeIdentity | null = null
 
 export function getPeerBlockRange(peerId: string): { blockStart: number; blockEnd: number } | null {
   return discoveredModels.getPeerRange(peerId)
 }
 
 export function getLatencyTracker(): PeerLatencyTracker { return latencyTracker }
+
+export function getNodeIdentity(): NodeIdentity {
+  if (!nodeIdentity) throw new Error('Identity not yet loaded')
+  return nodeIdentity
+}
 
 async function startOpenCoralNode(): Promise<void> {
   try {
@@ -179,6 +187,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  nodeIdentity = await loadOrCreateIdentity(app.getPath('userData'))
   setupIPC()
   await startOpenCoralNode()
   createWindow()
