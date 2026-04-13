@@ -32,12 +32,16 @@ Minimum: 8 GB RAM (CPU) or 8 GB VRAM (GPU).
 ```mermaid
 flowchart TB
     subgraph Renderer["Renderer Process (React)"]
-        UI["App Shell (4 tabs)"]
+        UI["App Shell"]
         NV["NetworkView"]
         MP["ModelPanel"]
+        MDP["ModelsPanel — browse & manage"]
         BH["BlockHostPanel"]
         CP["ChatPanel"]
-        UI --> NV & MP & BH & CP
+        CS["CoverageStatus"]
+        MS["ModelSelector"]
+        UI --> NV & MP & MDP & BH & CP
+        CP --> CS & MS
     end
 
     subgraph Preload["Preload Bridge"]
@@ -46,14 +50,17 @@ flowchart TB
 
     subgraph Main["Main Process (Electron + Bun)"]
         IDX["index.ts — IPC Handlers & Lifecycle"]
+        ID["Identity — persistent Ed25519 key pair"]
         MM["ModelManager — GGUF parsing & sidecar metadata"]
         HF["HuggingFace — search, download, partial fetch"]
-        BHM["BlockHost — load & serve local blocks"]
+        BHM["BlockHost — load, serve & drive inference"]
+        DM["DiscoveredModels — remote model & peer block-range tracking"]
+        PL["PeerLatencyTracker — EWMA round-trip estimation"]
 
         subgraph Inference["Inference Pipeline"]
             TOK["Tokenizer — BPE / SentencePiece + chat templates"]
-            SM["SequenceManager — plan chain, prefill & decode"]
-            BR["BlockRunner — native forward pass"]
+            SM["SequenceManager — plan chain & check coverage"]
+            ABR["AsyncBlockRunner — worker-thread native forward"]
             COV["Coverage — network block availability"]
         end
 
@@ -65,11 +72,12 @@ flowchart TB
     end
 
     subgraph P2P["P2P Layer (libp2p)"]
-        CN["OpenCoralNode — TCP + Noise + Yamux + Kad-DHT"]
-        DHT["DHT — per-block provider records"]
-        IP["InferenceProtocol — binary tensor streaming"]
-        MA["ModelAnnounce — peer metadata exchange"]
-        DM["DiscoveredModels — remote model tracking"]
+        CN["OpenCoralNode — TCP + Noise (pureJsCrypto) + Yamux + Kad-DHT"]
+        DHT["DHT — presence discovery + per-block content routing"]
+        BREG["BlockRegistry — periodic DHT re-announcement"]
+        IP["InferenceProtocol v1 + v2 — chunked framing & Ed25519-signed tensors"]
+        KV["KVProtocol — remote KV-cache sessions (open / forward / close)"]
+        MA["ModelAnnounce — peer metadata & block-range exchange"]
         NI["NetworkInspector — topology & stats"]
     end
 
@@ -81,16 +89,18 @@ flowchart TB
     Renderer <-->|"contextBridge"| Preload
     Preload <-->|"ipcRenderer / ipcMain"| Main
 
-    IDX --> MM & HF & BHM
-    BHM --> BR
-    SM --> BR
+    IDX --> ID & MM & HF & BHM & DM & PL
+    MM --> SM
+    BHM --> ABR & BREG & IP & KV
     SM --> COV
-    SM -->|"remote blocks"| IP
-    BR --> MC --> BF --> HW
+    SM -->|"chain planning"| DM & PL
+    ABR --> MC --> BF --> HW
 
     IDX --> CN
-    CN --> DHT & IP & MA & DM & NI
-    IP <-->|"hidden-state tensors"| Peers
+    CN --> DHT & IP & KV & MA & NI
+    BREG --> DHT
+    KV <-->|"KV-cached hidden-state tensors"| Peers
+    IP <-->|"signed tensors (v2)"| Peers
 ```
 
 ### Distributed Inference Flow
@@ -99,51 +109,64 @@ flowchart TB
 sequenceDiagram
     participant User
     participant Chat as ChatPanel
-    participant Main as Main Process
+    participant BH as BlockHost (Main)
     participant Tok as Tokenizer
     participant SM as SequenceManager
-    participant DHT as DHT Lookup
-    participant Local as Local BlockRunner
+    participant DM as DiscoveredModels
+    participant PL as PeerLatencyTracker
+    participant Local as AsyncBlockRunner
+    participant KV as KVProtocol
     participant Remote as Remote Peers
     participant Native as Native C++ (llama.cpp)
 
     User->>Chat: Send prompt
-    Chat->>Main: IPC: inference.start
-    Main->>Tok: Tokenize (chat template)
-    Tok-->>SM: token_ids
+    Chat->>BH: IPC: inference.start
+    BH->>Tok: Tokenize (chat template)
+    Tok-->>BH: token_ids
 
-    SM->>DHT: Find providers for each block
-    DHT-->>SM: Block → Peer mapping
+    BH->>SM: planChainWithCandidates()
+    SM->>DM: getPeerBlockRange() per peer
+    DM-->>SM: Peer → block range
+    SM->>PL: bestPeer() per block
+    PL-->>SM: Latency-ranked chain
+    SM-->>BH: chain steps (plan only)
+
+    BH->>KV: openRemoteSession() per remote step
+    KV->>Remote: /opencoral/kv/1.0.0 open
+    Remote-->>KV: session ack
 
     rect rgb(235, 245, 255)
-        Note over SM,Remote: Prefill Phase (full prompt)
-        SM->>Local: Embed tokens → hidden state
+        Note over BH,Remote: Prefill Phase (full prompt)
+        BH->>Local: embedTokens(promptIds)
         Local->>Native: block_forward (GPU/CPU)
-        Native-->>Local: hidden [N × dim]
-        SM->>Remote: Stream hidden state (blocks 0-14)
-        Remote-->>SM: Updated hidden state
-        SM->>Local: Forward pass (blocks 15-30)
+        Native-->>BH: hidden [N × dim]
+        BH->>Local: sessionForward (local blocks)
         Local->>Native: block_forward (GPU/CPU)
-        Native-->>SM: Updated hidden state
-        SM->>Remote: Stream hidden state (blocks 31-79)
-        Remote-->>SM: Final hidden state
-        SM->>Local: Project to logits
+        Native-->>BH: Updated hidden state
+        BH->>KV: forwardRemote (remote blocks)
+        KV->>Remote: Stream hidden-state tensor
+        Remote-->>KV: Updated hidden state
+        KV-->>BH: Result tensor
+        BH->>Local: projectToLogits
         Local->>Native: logits projection
-        Native-->>SM: logits [vocab_size]
-        SM->>SM: Sample token (temp + top-k)
+        Native-->>BH: logits [vocab_size]
+        BH->>BH: sampleTopK (temp + top-k)
     end
 
     rect rgb(245, 255, 235)
-        Note over SM,Remote: Decode Phase (KV-cached, per token)
+        Note over BH,Remote: Decode Phase (KV-cached, per token)
         loop Each new token
-            SM->>Local: Forward single token (KV cache)
-            SM->>Remote: Forward single token (KV cache)
-            SM->>SM: Sample next token
+            BH->>Local: sessionForward (single token)
+            BH->>KV: forwardRemote (single token)
+            KV->>Remote: Forward via KV session
+            Remote-->>KV: Result
+            BH->>BH: sampleTopK
         end
     end
 
-    SM-->>Main: Generated text + timing
-    Main-->>Chat: IPC: inference.token stream
+    BH->>KV: closeRemoteSession()
+    KV->>Remote: /opencoral/kv/1.0.0 close
+    BH-->>Chat: IPC: inference.token stream
     Chat-->>User: Display response
 ```
 
