@@ -35,7 +35,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
     })
-    registryA = new BlockRegistry(nodeA.libp2p, { blockStart: 0, blockEnd: 0 })
+    registryA = new BlockRegistry(nodeA.libp2p, {})
     await registryA.start()
 
     // Node B hosts block 1 and serves inference requests
@@ -45,7 +45,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
     })
-    registryB = new BlockRegistry(nodeB.libp2p, { blockStart: 1, blockEnd: 1 })
+    registryB = new BlockRegistry(nodeB.libp2p, {})
     await registryB.start()
 
     await registerInferenceHandler(nodeB.libp2p, async (input, nTokens) =>
@@ -67,11 +67,15 @@ describe('SequenceManager', () => {
   })
 
   it('planChain() finds a complete coverage across two peers', async () => {
+    const peerRanges = new Map([
+      [nodeB.peerId, { blockStart: 1, blockEnd: 1 }],
+    ])
     const mgr = new SequenceManager({
       node: nodeA,
       localRunner: runnerA,
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
+      getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
     })
 
     const chain = await mgr.planChain()
@@ -81,11 +85,15 @@ describe('SequenceManager', () => {
   })
 
   it('runChain() passes a tensor through both blocks and returns correct shape', async () => {
+    const peerRanges = new Map([
+      [nodeB.peerId, { blockStart: 1, blockEnd: 1 }],
+    ])
     const mgr = new SequenceManager({
       node: nodeA,
       localRunner: runnerA,
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
+      getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
     })
 
     const chain = await mgr.planChain()
@@ -98,11 +106,15 @@ describe('SequenceManager', () => {
   })
 
   it('runChain() output is finite and differs from input', async () => {
+    const peerRanges = new Map([
+      [nodeB.peerId, { blockStart: 1, blockEnd: 1 }],
+    ])
     const mgr = new SequenceManager({
       node: nodeA,
       localRunner: runnerA,
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
+      getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
     })
 
     const chain = await mgr.planChain()
@@ -129,11 +141,15 @@ describe('SequenceManager', () => {
   }, 15000)
 
   it('checkCoverage() reports full coverage when both blocks are hosted', async () => {
+    const peerRanges = new Map([
+      [nodeB.peerId, { blockStart: 1, blockEnd: 1 }],
+    ])
     const mgr = new SequenceManager({
       node: nodeA,
       localRunner: runnerA,
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
+      getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
     })
 
     const report = await mgr.checkCoverage()
@@ -145,11 +161,15 @@ describe('SequenceManager', () => {
 
   it('checkCoverage() reports missing when totalBlocks exceeds available coverage', async () => {
     // Block index TINY_CONFIG.n_blocks (=2) has no peer — only blocks 0 and 1 are hosted
+    const peerRanges = new Map([
+      [nodeB.peerId, { blockStart: 1, blockEnd: 1 }],
+    ])
     const mgr = new SequenceManager({
       node: nodeA,
       localRunner: runnerA,
       totalBlocks: TINY_CONFIG.n_blocks + 1,
       hiddenSize: TINY_CONFIG.n_embd,
+      getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
     })
 
     const report = await mgr.checkCoverage()

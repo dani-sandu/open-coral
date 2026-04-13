@@ -88,4 +88,20 @@ describe('DiscoveredModels', () => {
     expect(entry.coveredBlocks).toBe(16)
     expect(entry.peers).toHaveLength(1)
   })
+
+  it('getPeerRange() returns block range for a known peer', () => {
+    const dm = new DiscoveredModels()
+    dm.update('peer-A', {
+      repoId: 'org/model', hfFilename: 'model.gguf',
+      blockStart: 4, blockEnd: 11,
+      totalBlocks: 32, hiddenSize: 4096, architecture: 'llama',
+    })
+    const range = dm.getPeerRange('peer-A')
+    expect(range).toEqual({ blockStart: 4, blockEnd: 11 })
+  })
+
+  it('getPeerRange() returns null for unknown peer', () => {
+    const dm = new DiscoveredModels()
+    expect(dm.getPeerRange('unknown')).toBeNull()
+  })
 })

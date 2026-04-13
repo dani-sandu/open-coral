@@ -15,11 +15,7 @@ describe('BlockRegistry', () => {
     let announced = false
     const spy = mock(async () => { announced = true })
 
-    const registry = new BlockRegistry(node.libp2p, {
-      blockStart: 0,
-      blockEnd: 7,
-      announceBlocks: spy,
-    })
+    const registry = new BlockRegistry(node.libp2p, { announcePresence: spy })
     await registry.start()
     expect(announced).toBe(true)
 
@@ -33,10 +29,8 @@ describe('BlockRegistry', () => {
     const spy = mock(async () => { callCount++ })
 
     const registry = new BlockRegistry(node.libp2p, {
-      blockStart: 0,
-      blockEnd: 7,
       reannounceIntervalMs: 50,  // fast interval for testing
-      announceBlocks: spy,
+      announcePresence: spy,
     })
     await registry.start()
 
@@ -49,11 +43,7 @@ describe('BlockRegistry', () => {
 
   it('dispose() before start() does not throw', () => {
     const stub = {} as any  // only used if start() is called, which it won't be
-    const registry = new BlockRegistry(stub, {
-      blockStart: 0,
-      blockEnd: 7,
-      announceBlocks: async () => {},
-    })
+    const registry = new BlockRegistry(stub, { announcePresence: async () => {} })
     expect(() => registry.dispose()).not.toThrow()
   })
 
@@ -61,11 +51,7 @@ describe('BlockRegistry', () => {
     const node = await createOpenCoralNode()
     nodes.push(node)
 
-    const registry = new BlockRegistry(node.libp2p, {
-      blockStart: 0,
-      blockEnd: 7,
-      announceBlocks: mock(async () => {}),
-    })
+    const registry = new BlockRegistry(node.libp2p, { announcePresence: mock(async () => {}) })
     await registry.start()
 
     // Should not throw when node stops

@@ -10,6 +10,7 @@ import type { CoverageReport } from '../inference/coverage'
 import { createTokenizer, type Tokenizer } from '../inference/tokenizer'
 import { peerIdFromString } from '@libp2p/peer-id'
 import type { OpenCoralNode } from '../p2p/node'
+import { getPeerBlockRange, getLatencyTracker } from './index'
 
 export interface HostingState {
   modelPath: string
@@ -132,7 +133,7 @@ export function setupBlockHostIPC(
       hiddenSize: model.hiddenSize,
     })
 
-    const registry = new BlockRegistry(node.libp2p, { blockStart, blockEnd })
+    const registry = new BlockRegistry(node.libp2p, {})
     await registry.start()
 
     await registerInferenceHandler(node.libp2p, async (input, nTokens) => {
@@ -248,6 +249,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       localRunner: activeHost.runner,
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
+      getPeerBlockRange,
+      latencyTracker: getLatencyTracker(),
     })
 
     const chain = await mgr.planChainWithCandidates()
@@ -389,6 +392,7 @@ export function setupCoverageIPC(getNode: () => OpenCoralNode | null): void {
       localRunner: activeHost?.runner ?? null,
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
+      getPeerBlockRange,
     })
 
     return mgr.checkCoverage()
