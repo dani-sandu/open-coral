@@ -7,3 +7,4 @@ native/_deps/
 *.gguf
 .worktrees/
 release/
+docs/
