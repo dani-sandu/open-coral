@@ -8,7 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "bun test",
-    "build:native": "cmake-js build --directory native --out native/build --runtime=electron --runtime-version=33.0.0 --arch=x64",
+    "build:native": "cmake-js build --directory native --out native/build --runtime=electron --runtime-version=33.0.0",
     "clean:native": "cmake-js clean --directory native --out native/build",
     "pack": "npm run build:native && electron-vite build && electron-builder --dir",
     "dist": "npm run build:native && electron-vite build && electron-builder",
