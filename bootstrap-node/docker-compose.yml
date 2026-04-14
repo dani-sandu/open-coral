@@ -1,0 +1,13 @@
+services:
+  bootstrap:
+    build: .
+    ports:
+      - "4001:4001"
+    volumes:
+      - bootstrap-data:/data
+    environment:
+      - PORT=4001
+    restart: unless-stopped
+
+volumes:
+  bootstrap-data:
