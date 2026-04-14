@@ -5,6 +5,7 @@ import { yamux } from '@chainsafe/libp2p-yamux'
 import { kadDHT, passthroughMapper } from '@libp2p/kad-dht'
 import { identify } from '@libp2p/identify'
 import { ping } from '@libp2p/ping'
+import { bootstrap } from '@libp2p/bootstrap'
 
 export interface OpenCoralNode {
   /** base58btc-encoded peer ID */
@@ -19,10 +20,22 @@ export interface OpenCoralNode {
 export interface OpenCoralNodeOptions {
   /** TCP port to listen on. 0 = OS-assigned (default). */
   port?: number
+  /** Override bootstrap multiaddrs. Empty array disables bootstrap. */
+  bootstrapPeers?: string[]
+}
+
+/** Default bootstrap multiaddrs. Set OPENCORAL_BOOTSTRAP env var to override (comma-separated). */
+function getBootstrapPeers(overrides?: string[]): string[] {
+  if (overrides !== undefined) return overrides
+  const envVal = process.env['OPENCORAL_BOOTSTRAP']
+  if (envVal) return envVal.split(',').map(s => s.trim()).filter(Boolean)
+  // TODO: Replace with production bootstrap node multiaddr after first deployment
+  return []
 }
 
 export async function createOpenCoralNode(opts: OpenCoralNodeOptions = {}): Promise<OpenCoralNode> {
   const port = opts.port ?? 0
+  const peers = getBootstrapPeers(opts.bootstrapPeers)
 
   const libp2p = await createLibp2p({
     addresses: {
@@ -45,6 +58,11 @@ export async function createOpenCoralNode(opts: OpenCoralNodeOptions = {}): Prom
         peerInfoMapper: passthroughMapper,
       }),
     },
+    ...(peers.length > 0 && {
+      peerDiscovery: [
+        bootstrap({ list: peers }),
+      ],
+    }),
   })
 
   await libp2p.start()
