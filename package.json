@@ -54,6 +54,10 @@
       {
         "from": "native/build/Release/coral_native.node",
         "to": "native/coral_native.node"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "win": {
