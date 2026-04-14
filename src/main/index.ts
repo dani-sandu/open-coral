@@ -158,12 +158,17 @@ function setupIPC(): void {
 }
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
+
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     title: 'OpenCoral',
+    icon: iconPath,
     backgroundColor: '#1e1e2e',
     autoHideMenuBar: true,
     webPreferences: {

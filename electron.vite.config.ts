@@ -7,6 +7,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({
       exclude: [
         'libp2p',
+        '@libp2p/bootstrap',
         '@libp2p/tcp',
         '@libp2p/kad-dht',
         '@libp2p/identify',
