@@ -30,7 +30,7 @@ function getBootstrapPeers(overrides?: string[]): string[] {
   const envVal = process.env['OPENCORAL_BOOTSTRAP']
   if (envVal) return envVal.split(',').map(s => s.trim()).filter(Boolean)
   // TODO: Replace with production bootstrap node multiaddr after first deployment
-  return []
+  return ['/ip4/72.62.154.149/tcp/4001/p2p/12D3KooWC33w9pdLEz65mrRain3EiMHe5EAxagCXSGoDjKLT4Q6J']
 }
 
 export async function createOpenCoralNode(opts: OpenCoralNodeOptions = {}): Promise<OpenCoralNode> {
