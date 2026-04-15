@@ -8,3 +8,4 @@ native/_deps/
 .worktrees/
 release/
 docs/
+package-lock.json

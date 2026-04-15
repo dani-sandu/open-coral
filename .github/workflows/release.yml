@@ -34,10 +34,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        shell: bash
-        run: |
-          rm -f bun.lock
-          bun install
+        run: bun install
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'linux'
