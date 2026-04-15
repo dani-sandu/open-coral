@@ -1,1 +1,5 @@
 preload = ["./scripts/crypto-polyfill.ts"]
+
+[install]
+os = "*"
+cpu = "*"
