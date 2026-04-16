@@ -1,0 +1,124 @@
+/* ── SVG graph container ───────────────────────────────────────────────────── */
+
+.graphWrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.svgGraph {
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+/* ── Hover detail panel ────────────────────────────────────────────────────── */
+
+.detailPanel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  font-size: var(--fs-md);
+  font-family: var(--font-mono);
+  color: var(--text);
+  min-width: 220px;
+}
+
+.detailPanelTitle {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.detailRow {
+  margin-bottom: 4px;
+}
+
+.detailRowIndent {
+  font-size: var(--fs-xs);
+  padding-left: 8px;
+  color: var(--dim);
+}
+
+.detailModelSection {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.detailModelRow {
+  margin-bottom: 3px;
+}
+
+/* ── Error message ─────────────────────────────────────────────────────────── */
+
+.error {
+  color: var(--red);
+  font-size: var(--fs-md);
+  margin-bottom: var(--sp-sm);
+}
+
+/* ── Peer table ────────────────────────────────────────────────────────────── */
+
+.tableSection {
+  margin-top: var(--sp-lg);
+}
+
+.tableHeading {
+  font-size: var(--fs-lg);
+  color: var(--dim);
+  margin: 0 0 var(--sp-sm);
+  font-weight: 500;
+}
+
+.peerTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.peerTable th {
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 500;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.peerTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.peerRow {
+  transition: background 0.1s;
+}
+
+.peerRowHovered {
+  background: var(--surface);
+}
+
+/* ── Status strip elements ─────────────────────────────────────────────────── */
+
+.statusItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Live button active state ──────────────────────────────────────────────── */
+
+.btnLive {
+  background: var(--accent-dim) !important;
+  color: var(--accent) !important;
+  border-color: color-mix(in srgb, var(--accent) 27%, transparent) !important;
+}

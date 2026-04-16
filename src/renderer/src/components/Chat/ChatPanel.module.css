@@ -1,0 +1,440 @@
+/* ── Chat layout ──────────────────────────────────────────────────────────── */
+
+.chatLayout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.chatMain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ── Session sidebar ──────────────────────────────────────────────────────── */
+
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  margin-right: var(--sp-lg);
+  padding-right: var(--sp-sm);
+}
+
+.sidebarHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sidebarLabel {
+  font-size: var(--fs-sm);
+  color: var(--dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebarList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sidebarEmpty {
+  color: var(--dim);
+  font-size: var(--fs-sm);
+  padding: 12px 4px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.sessionRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.sessionBtn {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+}
+
+.sessionBtn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+}
+
+.sessionBtnActive {
+  composes: sessionBtn;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 27%, transparent);
+}
+
+.sessionBtnTitle {
+  font-weight: 600;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionBtnMeta {
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
+.deleteBtn {
+  background: transparent;
+  color: var(--dim);
+  border: none;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: all 0.15s;
+  font-family: var(--font-ui);
+  line-height: 1;
+}
+
+.deleteBtn:hover {
+  opacity: 1;
+  color: var(--red);
+}
+
+/* ── Message area ─────────────────────────────────────────────────────────── */
+
+.messageArea {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+
+.messageEmpty {
+  text-align: center;
+  color: var(--dim);
+  font-size: var(--fs-md);
+  padding: 48px 20px;
+  line-height: 1.7;
+}
+
+.messageStart {
+  text-align: center;
+  color: var(--dim);
+  font-size: var(--fs-md);
+  padding: 32px 20px;
+  line-height: 1.7;
+}
+
+/* ── Message bubbles ──────────────────────────────────────────────────────── */
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+
+.bubbleUser {
+  composes: bubble;
+  align-items: flex-end;
+}
+
+.bubbleAssistant {
+  composes: bubble;
+  align-items: flex-start;
+}
+
+.bubbleInner {
+  max-width: 88%;
+  padding: 10px 14px;
+}
+
+.bubbleInnerUser {
+  composes: bubbleInner;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 27%, transparent);
+  border-radius: 12px 12px 4px 12px;
+}
+
+.bubbleInnerAssistant {
+  composes: bubbleInner;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 12px 4px;
+}
+
+.bubbleText {
+  font-size: var(--fs-lg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.bubbleError {
+  font-size: var(--fs-sm);
+  color: var(--red);
+  margin-top: 6px;
+}
+
+.bubbleTimestamp {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  margin-top: 3px;
+  padding: 0 4px;
+}
+
+/* ── Trace view ───────────────────────────────────────────────────────────── */
+
+.traceStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  margin-bottom: 2px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+}
+
+.traceStepLocal {
+  composes: traceStep;
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.traceStepNum {
+  color: var(--dim);
+  min-width: 18px;
+  text-align: right;
+}
+
+.traceStepPeer {
+  min-width: 96px;
+}
+
+.traceStepPeerLocal {
+  composes: traceStepPeer;
+  color: var(--accent);
+}
+
+.traceStepPeerRemote {
+  composes: traceStepPeer;
+  color: var(--blue);
+}
+
+.traceStepBlocks {
+  color: var(--dim);
+}
+
+.traceStepDuration {
+  margin-left: auto;
+  color: var(--yellow);
+}
+
+.traceSummary {
+  display: flex;
+  gap: var(--sp-lg);
+  margin-top: 6px;
+  padding: 3px 8px;
+  font-size: var(--fs-sm);
+  color: var(--dim);
+  font-family: var(--font-mono);
+}
+
+.traceSummaryValue {
+  color: var(--text);
+}
+
+/* ── Input area ───────────────────────────────────────────────────────────── */
+
+.inputArea {
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.modelPickerRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.modelBtn {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px 10px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+}
+
+.modelBtnLoaded {
+  composes: modelBtn;
+  color: var(--text);
+}
+
+.modelBtnActive {
+  composes: modelBtn;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.modelBtnActiveLoaded {
+  composes: modelBtnLoaded;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.modelBtnCaret {
+  color: var(--dim);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.modelBtnLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPickerDropdown {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.modelPickerCoverage {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.textarea {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  font-size: var(--fs-lg);
+  resize: none;
+  outline: none;
+  font-family: var(--font-ui);
+  opacity: 1;
+}
+
+.textarea:disabled {
+  opacity: 0.6;
+}
+
+.maxTokensGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+
+.maxTokensLabel {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}
+
+.maxTokensInput {
+  width: 44px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 5px 4px;
+  font-size: var(--fs-md);
+  text-align: center;
+  outline: none;
+  font-family: var(--font-ui);
+}
+
+.coverageWarning {
+  font-size: var(--fs-sm);
+  color: var(--red);
+  margin-top: 6px;
+}
+
+/* ── Thinking indicator ───────────────────────────────────────────────────── */
+
+.thinkingRow {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.thinkingBubble {
+  max-width: 88%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 12px 4px;
+  padding: 10px 14px;
+}
+
+.thinkingInner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinnerFrame {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  color: var(--accent);
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+}
+
+.thinkingMsg {
+  font-size: var(--fs-lg);
+  color: var(--text);
+}
+
+.thinkingElapsed {
+  font-size: var(--fs-sm);
+  color: var(--dim);
+  margin-left: 8px;
+}

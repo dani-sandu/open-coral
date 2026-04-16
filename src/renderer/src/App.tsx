@@ -1,16 +1,10 @@
 import React, { useState, useCallback } from 'react'
-import NetworkView from './NetworkView'
-import ModelsPanel from './ModelsPanel'
-import ChatPanel from './ChatPanel'
+import NetworkView from './components/Network/NetworkView'
+import ModelsPanel from './components/Model/ModelsPanel'
+import ChatPanel from './components/Chat/ChatPanel'
 import type { ChatSession } from './types'
-import './types'
-
-// ── Shared color palette ───────────────────────────────────────────────────────
-
-const C = {
-  bg: '#1e1e2e', surface: '#181825', border: '#313244',
-  text: '#cdd6f4', dim: '#6c7086', accent: '#7c6af7',
-}
+import './components/shared/theme.css'
+import styles from './App.module.css'
 
 type Tab = 'network' | 'models' | 'chat'
 
@@ -48,37 +42,19 @@ export default function App(): React.JSX.Element {
   }, [])
 
   return (
-    <div style={{
-      fontFamily: 'system-ui', background: C.bg, color: C.text,
-      height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-    }}>
+    <div className={styles.app}>
       {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '12px 24px', background: C.surface,
-        borderBottom: `1px solid ${C.border}`,
-      }}>
-        <span style={{ color: C.accent, fontSize: 20, fontWeight: 700 }}>⬡</span>
-        <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>OpenCoral</span>
-        <span style={{ color: C.dim, fontSize: 11 }}>Decentralized LLM</span>
+      <div className={styles.header}>
+        <span className={styles.headerTitle}>OpenCoral</span>
       </div>
 
       {/* Tab bar */}
-      <div style={{
-        display: 'flex', gap: 2, padding: '8px 16px',
-        background: C.surface, borderBottom: `1px solid ${C.border}`,
-      }}>
+      <div className={styles.tabBar}>
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            style={{
-              background: tab === t.id ? C.accent + '22' : 'transparent',
-              color: tab === t.id ? C.accent : C.dim,
-              border: tab === t.id ? `1px solid ${C.accent}44` : '1px solid transparent',
-              borderRadius: 6, padding: '5px 14px', fontSize: 12,
-              cursor: 'pointer', transition: 'all 0.15s',
-            }}
+            className={tab === t.id ? styles.tabActive : styles.tab}
           >
             {t.label}
           </button>
@@ -86,14 +62,14 @@ export default function App(): React.JSX.Element {
       </div>
 
       {/* Tab content — all tabs stay mounted, hidden via display:none to preserve state */}
-      <div style={{ flex: 1, padding: '4px 16px 16px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-        <div style={{ flex: 1, display: tab === 'network' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+      <div className={styles.tabContent}>
+        <div className={tab === 'network' ? styles.tabPane : styles.tabPaneHidden}>
           <NetworkView />
         </div>
-        <div style={{ flex: 1, display: tab === 'models' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+        <div className={tab === 'models' ? styles.tabPane : styles.tabPaneHidden}>
           <ModelsPanel />
         </div>
-        <div style={{ flex: 1, display: tab === 'chat' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+        <div className={tab === 'chat' ? styles.tabPane : styles.tabPaneHidden}>
           <ChatPanel
             sessions={sessions}
             activeSessionId={activeSessionId}
