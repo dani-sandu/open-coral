@@ -318,7 +318,7 @@ export default function ModelsPanel(): React.JSX.Element {
   return (
     <div style={{ padding: 20, fontFamily: 'system-ui' }}>
       <h2 style={{ color: C.text, fontSize: 16, margin: '0 0 16px' }}>
-        <span style={{ color: C.accent }}>⬡</span> Models
+         Models
       </h2>
 
       {error && (

@@ -365,7 +365,7 @@ export default function ChatPanel({
       {/* ── Main chat area ───────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <h2 style={{ color: C.text, fontSize: 16, margin: '0 0 12px' }}>
-          <span style={{ color: C.accent }}>⬡</span> Chat
+          Chat
         </h2>
 
         {/* Message history */}

@@ -11,7 +11,7 @@ export interface PeerModelInfo {
 
 export interface NetworkPeer {
   peerId: string
-  /** Display name shown in the UI (e.g. 'Coral Network Peer' for bootstrap nodes) */
+  /** Display name shown in the UI (e.g. 'Coral Network for bootstrap nodes) */
   displayName?: string
   peerType: 'local' | 'remote' | 'discovery'
   multiaddrs: string[]
@@ -75,7 +75,7 @@ export function inspectNetwork(
 
     peers.push({
       peerId: peerIdStr,
-      displayName: isBootstrap ? 'Coral Network Peer' : undefined,
+      displayName: isBootstrap ? 'Coral Network' : undefined,
       peerType: isBootstrap ? 'discovery' : 'remote',
       multiaddrs: addrs,
       blockRanges: remoteModelInfo ? [{ start: remoteModelInfo.blockStart, end: remoteModelInfo.blockEnd }] : [],

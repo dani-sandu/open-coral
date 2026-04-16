@@ -58,9 +58,7 @@ export default function App(): React.JSX.Element {
         padding: '12px 24px', background: C.surface,
         borderBottom: `1px solid ${C.border}`,
       }}>
-        <span style={{ color: C.accent, fontSize: 20, fontWeight: 700 }}>⬡</span>
         <span style={{ fontWeight: 700, fontSize: 16, color: C.text }}>OpenCoral</span>
-        <span style={{ color: C.dim, fontSize: 11 }}>Decentralized LLM</span>
       </div>
 
       {/* Tab bar */}

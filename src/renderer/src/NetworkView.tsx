@@ -221,7 +221,7 @@ function PeerDetailPanel({ peer, color }: { peer: NetworkPeer; color: string }):
       minWidth: 220,
     }}>
       <div style={{ marginBottom: 8, fontWeight: 600, color }}>
-        {peer.peerType === 'local' ? '⬢ Local Node' : peer.peerType === 'discovery' ? '⬡ Coral Network Peer' : '⬡ Remote Peer'}
+        {peer.peerType === 'local' ? '⬢ Local Node' : peer.peerType === 'discovery' ? 'Coral Network' : 'Remote Peer'}
       </div>
       <div style={{ marginBottom: 4 }}>
         <span style={{ color: COLORS.textDim }}>Peer ID: </span>
@@ -321,7 +321,7 @@ export default function NetworkView(): React.JSX.Element {
         marginBottom: 12,
       }}>
         <h2 style={{ margin: 0, fontSize: 16, color: COLORS.text, fontWeight: 600 }}>
-          <span style={{ color: COLORS.accent }}>⬡</span> Network View
+         Network View
         </h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
