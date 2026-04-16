@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, Menu } from 'electron'
 import { join } from 'path'
-import { createOpenCoralNode, type OpenCoralNode } from '../p2p/node'
+import { createOpenCoralNode, getBootstrapPeers, type OpenCoralNode } from '../p2p/node'
 import { inspectNetwork, type NetworkState } from '../p2p/network-inspector'
 import { setupModelIPC, getCurrentModel } from './model-manager'
 import { setupBlockHostIPC, setupInferenceIPC, setupCoverageIPC, getActiveHost } from './block-host'
@@ -153,7 +153,14 @@ function setupIPC(): void {
       })
     }
 
-    return inspectNetwork(openCoralNode, localBlocks, peerModelMap)
+    // Extract bootstrap peer IDs from multiaddrs so the UI can tag them
+    const bootstrapPeerIds = new Set<string>()
+    for (const addr of getBootstrapPeers()) {
+      const match = addr.match(/\/p2p\/([^/]+)$/)
+      if (match) bootstrapPeerIds.add(match[1])
+    }
+
+    return inspectNetwork(openCoralNode, localBlocks, peerModelMap, bootstrapPeerIds)
   })
 }
 

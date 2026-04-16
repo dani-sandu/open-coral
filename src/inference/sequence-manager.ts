@@ -1,10 +1,15 @@
 import { peerIdFromString } from '@libp2p/peer-id'
 import { multiaddr } from '@multiformats/multiaddr'
 import type { OpenCoralNode } from '../p2p/node'
-import { findPeerForBlock, findCoralPeers, type PeerBlockInfo } from '../p2p/dht'
+import { findCoralPeers, findModelPeers, type PeerBlockInfo } from '../p2p/dht'
+import { queryPeerModelInfo } from '../p2p/model-announce'
 import type { PeerLatencyTracker } from '../p2p/peer-latency'
-import { sendInferenceRequest } from '../p2p/inference-protocol'
+import { DEFAULT_LATENCY_MS } from '../p2p/peer-latency'
+import { sendInferenceRequestV3 } from '../p2p/inference-protocol'
+import type { NodeIdentity } from '../main/identity'
 import { computeCoverage, type BlockCoverage, type CoverageReport } from './coverage'
+
+const HOP_PENALTY_MS = 50
 
 /** Minimal interface for a block runner (sync BlockRunner or async AsyncBlockRunner). */
 export interface BlockRunnerLike {
@@ -52,6 +57,10 @@ export interface SequenceManagerOptions {
   getPeerBlockRange?: (peerId: string) => { blockStart: number; blockEnd: number } | null
   /** Optional tracker for latency-aware peer selection. */
   latencyTracker?: PeerLatencyTracker
+  /** Node identity used to sign outgoing V3 inference requests. */
+  identity: NodeIdentity
+  /** Model repo ID used for model-level DHT discovery (optional). */
+  repoId?: string
 }
 
 /**
@@ -65,6 +74,8 @@ export class SequenceManager {
   private readonly hiddenSize: number
   private readonly getPeerBlockRange: (peerId: string) => { blockStart: number; blockEnd: number } | null
   private readonly latencyTracker: PeerLatencyTracker | null
+  private readonly identity: NodeIdentity
+  private readonly repoId: string | undefined
 
   constructor(opts: SequenceManagerOptions) {
     this.node = opts.node
@@ -73,6 +84,8 @@ export class SequenceManager {
     this.hiddenSize = opts.hiddenSize
     this.getPeerBlockRange = opts.getPeerBlockRange ?? (() => null)
     this.latencyTracker = opts.latencyTracker ?? null
+    this.identity = opts.identity
+    this.repoId = opts.repoId
   }
 
   /**
@@ -139,7 +152,7 @@ export class SequenceManager {
    * @param nTokens Number of tokens in the batch
    * @returns       Float32Array of shape [nTokens × hiddenSize] after all blocks
    */
-  async runChain(chain: ChainStep[], input: Float32Array, nTokens: number): Promise<Float32Array> {
+  async runChain(chain: ChainStep[], input: Float32Array, nTokens: number, requestId = 'no-trace'): Promise<Float32Array> {
     let current = input
 
     for (const step of chain) {
@@ -153,12 +166,14 @@ export class SequenceManager {
           await this.node.libp2p.dial(multiaddr(step.multiaddr))
         }
         const t0 = Date.now()
-        current = await sendInferenceRequest(
+        current = await sendInferenceRequestV3(
           this.node.libp2p,
           peerId,
           current,
           nTokens,
           this.hiddenSize,
+          requestId,
+          this.identity,
         )
         this.latencyTracker?.record(step.peerId, Date.now() - t0)
       }
@@ -190,34 +205,55 @@ export class SequenceManager {
         }
       }
     } else {
-      // DHT-based: query each block index for all available peers
       blockCandidates = new Map()
       const selfId = this.node.peerId
-      const queries: Promise<void>[] = []
 
-      for (let i = 0; i < this.totalBlocks; i++) {
-        if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
-        queries.push(
-          findPeerForBlock(this.node.libp2p, i)
-            .then(peers => {
-              const remote = peers.filter(p => p.peerId !== selfId)
-              for (const peer of remote) {
-                const list = blockCandidates.get(i) ?? []
-                if (!list.some(c => c.peerId === peer.peerId)) {
-                  list.push({
-                    peerId: peer.peerId,
-                    blockStart: i,
-                    blockEnd: i,
-                    multiaddr: peer.multiaddrs[0],
-                  })
-                }
-                blockCandidates.set(i, list)
+      if (this.repoId) {
+        // Model-level discovery: single DHT query, then modelinfo per peer
+        const peers = await findModelPeers(this.node.libp2p, this.repoId)
+        for (const peer of peers) {
+          if (peer.peerId === selfId) continue
+          try {
+            const peerId = peerIdFromString(peer.peerId)
+            const info = await queryPeerModelInfo(this.node.libp2p, peerId)
+            if (!info) continue
+            for (let i = info.blockStart; i <= info.blockEnd; i++) {
+              if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
+              const list = blockCandidates.get(i) ?? []
+              if (!list.some(c => c.peerId === peer.peerId)) {
+                list.push({
+                  peerId: peer.peerId,
+                  blockStart: info.blockStart,
+                  blockEnd: info.blockEnd,
+                  multiaddr: peer.multiaddrs[0],
+                })
               }
-            })
-            .catch(() => {}),
-        )
+              blockCandidates.set(i, list)
+            }
+          } catch {}
+        }
+      } else {
+        // Fallback: coral peer discovery + getPeerBlockRange
+        const coralPeers = await findCoralPeers(this.node.libp2p)
+        for (const peer of coralPeers) {
+          if (peer.peerId === selfId) continue
+          const range = this.getPeerBlockRange(peer.peerId)
+          if (!range) continue
+          for (let i = range.blockStart; i <= range.blockEnd; i++) {
+            if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
+            const list = blockCandidates.get(i) ?? []
+            if (!list.some(c => c.peerId === peer.peerId)) {
+              list.push({
+                peerId: peer.peerId,
+                blockStart: range.blockStart,
+                blockEnd: range.blockEnd,
+                multiaddr: peer.multiaddrs[0],
+              })
+            }
+            blockCandidates.set(i, list)
+          }
+        }
       }
-      await Promise.all(queries)
     }
 
     const steps: ChainStepWithCandidates[] = []
@@ -244,17 +280,67 @@ export class SequenceManager {
         throw new Error(`No peer found for blocks starting at ${position}`)
       }
 
-      const best = candidates[0]
+      // Score candidates by latency, with a bonus for candidates that cover more
+      // remaining blocks (avoids picking a slightly-faster peer that forces a hop soon)
+      const remainingBlocks = this.totalBlocks - position
+      const scored = candidates.map(c => {
+        const latency = this.latencyTracker?.getEstimate(c.peerId) ?? DEFAULT_LATENCY_MS
+        // How far can this candidate extend from the current position?
+        let reach = 0
+        for (let j = position; j < this.totalBlocks; j++) {
+          if (blockCandidates.get(j)?.some(bc => bc.peerId === c.peerId)) reach++
+          else break
+        }
+        // A candidate that can't cover all remaining blocks will force a hop later.
+        // Add a hop penalty proportional to the fraction of range NOT covered.
+        const coveragePenalty = reach < remainingBlocks ? HOP_PENALTY_MS : 0
+        return { candidate: c, latency, effectiveScore: latency + coveragePenalty }
+      }).sort((a, b) => a.effectiveScore - b.effectiveScore)
+
+      const currentPeer = scored[0]
       let end = position
-      // Extend range as long as the best peer covers consecutive blocks
+
       while (end + 1 < this.totalBlocks) {
         if (this.localRunner && end + 1 >= this.localRunner.blockStart && end + 1 <= this.localRunner.blockEnd) break
-        if (!blockCandidates.get(end + 1)?.some(c => c.peerId === best.peerId)) break
+
+        const nextCandidates = blockCandidates.get(end + 1)
+        if (!nextCandidates || nextCandidates.length === 0) break
+
+        // Can current peer continue?
+        const canContinue = nextCandidates.some(c => c.peerId === currentPeer.candidate.peerId)
+        if (!canContinue) break
+
+        // Is there a better peer at the next position? (accounting for hop penalty)
+        const continuationScore = currentPeer.latency
+        const alternatives = nextCandidates
+          .filter(c => c.peerId !== currentPeer.candidate.peerId)
+          .map(c => ({
+            candidate: c,
+            latency: this.latencyTracker?.getEstimate(c.peerId) ?? DEFAULT_LATENCY_MS,
+          }))
+
+        const bestAlt = alternatives.length > 0
+          ? alternatives.reduce((a, b) => a.latency < b.latency ? a : b)
+          : null
+
+        if (bestAlt && bestAlt.latency + HOP_PENALTY_MS < continuationScore) {
+          break  // Split here — a significantly faster peer is available
+        }
+
         end++
       }
 
+      // Order all candidates for this range by latency (best-first)
+      const stepCandidates = (blockCandidates.get(position) ?? [])
+        .map(c => ({
+          ...c,
+          _latency: this.latencyTracker?.getEstimate(c.peerId) ?? DEFAULT_LATENCY_MS,
+        }))
+        .sort((a, b) => a._latency - b._latency)
+        .map(({ _latency, ...c }) => c)
+
       steps.push({
-        candidates,
+        candidates: stepCandidates,
         blockStart: position,
         blockEnd: end,
       })
@@ -273,6 +359,7 @@ export class SequenceManager {
     chain: ChainStepWithCandidates[],
     input: Float32Array,
     nTokens: number,
+    requestId = 'no-trace',
   ): Promise<Float32Array> {
     let current = input
 
@@ -294,12 +381,14 @@ export class SequenceManager {
             await this.node.libp2p.dial(multiaddr(candidate.multiaddr))
           }
           const t0 = Date.now()
-          current = await sendInferenceRequest(
+          current = await sendInferenceRequestV3(
             this.node.libp2p,
             peerId,
             current,
             nTokens,
             this.hiddenSize,
+            requestId,
+            this.identity,
           )
           this.latencyTracker?.record(candidate.peerId, Date.now() - t0)
           succeeded = true

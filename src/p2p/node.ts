@@ -25,7 +25,7 @@ export interface OpenCoralNodeOptions {
 }
 
 /** Default bootstrap multiaddrs. Set OPENCORAL_BOOTSTRAP env var to override (comma-separated). */
-function getBootstrapPeers(overrides?: string[]): string[] {
+export function getBootstrapPeers(overrides?: string[]): string[] {
   if (overrides !== undefined) return overrides
   const envVal = process.env['OPENCORAL_BOOTSTRAP']
   if (envVal) return envVal.split(',').map(s => s.trim()).filter(Boolean)

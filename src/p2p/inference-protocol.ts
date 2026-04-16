@@ -1,9 +1,11 @@
 import type { Libp2p } from 'libp2p'
-import type { PeerId, Stream } from '@libp2p/interface'
-import { createHash, sign as cryptoSign, verify as cryptoVerify, createPrivateKey, createPublicKey } from 'crypto'
+import type { PeerId } from '@libp2p/interface'
+import { createHash } from 'crypto'
 import type { NodeIdentity } from '../main/identity'
+import { encodeChunked, decodeChunked, collectChunkedStream, sendChunked, DEFAULT_CHUNK_SIZE } from './stream-utils'
+import { signHash, verifyHash } from './ed25519-helpers'
 
-export const INFERENCE_PROTOCOL = '/opencoral/inference/1.0.0'
+export { encodeChunked, decodeChunked, DEFAULT_CHUNK_SIZE } from './stream-utils'
 
 export type InferenceHandler = (
   input: Float32Array,
@@ -11,157 +13,52 @@ export type InferenceHandler = (
   nEmbd: number,
 ) => Promise<Float32Array>
 
-// Wire format: [uint32 LE: nTokens][uint32 LE: nEmbd][float32 LE × nTokens × nEmbd]
-
-function encodeMessage(data: Float32Array, nTokens: number, nEmbd: number): Uint8Array {
-  const buf = Buffer.allocUnsafe(8 + data.byteLength)
-  buf.writeUInt32LE(nTokens, 0)
-  buf.writeUInt32LE(nEmbd, 4)
-  Buffer.from(data.buffer, data.byteOffset, data.byteLength).copy(buf, 8)
-  return buf
-}
-
-function decodeMessage(buf: Buffer): { nTokens: number; nEmbd: number; data: Float32Array } {
-  if (buf.length < 8) {
-    throw new Error(`Message header truncated: expected 8 bytes, got ${buf.length}`)
-  }
-  const nTokens = buf.readUInt32LE(0)
-  const nEmbd = buf.readUInt32LE(4)
-  const expectedBytes = nTokens * nEmbd * 4
-  if (buf.length < 8 + expectedBytes) {
-    throw new Error(`Message payload truncated: expected ${8 + expectedBytes} bytes, got ${buf.length}`)
-  }
-  const floatByteLength = nTokens * nEmbd * 4
-  const floatBuf = Buffer.allocUnsafe(floatByteLength)
-  buf.copy(floatBuf, 0, 8, 8 + floatByteLength)
-  return { nTokens, nEmbd, data: new Float32Array(floatBuf.buffer) }
-}
-
-async function collectStream(stream: AsyncIterable<Uint8Array | { subarray(): Uint8Array }>): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  for await (const chunk of stream) {
-    // libp2p streams yield Uint8ArrayList (has .subarray()) or plain Uint8Array
-    const bytes: Uint8Array = typeof (chunk as any).subarray === 'function'
-      ? (chunk as any).subarray()
-      : (chunk as Uint8Array)
-    chunks.push(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
-  }
-  return Buffer.concat(chunks)
-}
-
-async function sendWithBackpressure(stream: Stream, data: Uint8Array): Promise<void> {
-  if (!stream.send(data)) {
-    // send() returns false when the write buffer is full; wait for drain before continuing
-    await new Promise<void>(resolve => {
-      stream.addEventListener('drain', () => resolve(), { once: true })
-    })
-  }
-}
-
-export const DEFAULT_CHUNK_SIZE = 64 * 1024  // 64 KB per frame
+export const INFERENCE_PROTOCOL_V3 = '/opencoral/inference/3.0.0'
 
 /**
- * Split `data` into frames: [uint32 LE size][bytes] repeated, then [uint32 LE 0] sentinel.
- * Returns an array of Buffers ready to send via stream.send().
+ * Compute SHA-256 of an arbitrary payload buffer.
+ * Used by V3 to hash the full wire payload (version + requestId + nTokens + nEmbd + tensor).
  */
-export function encodeChunked(data: Uint8Array, chunkSize: number = DEFAULT_CHUNK_SIZE): Buffer[] {
-  const frames: Buffer[] = []
-  let offset = 0
-  while (offset < data.byteLength) {
-    const end = Math.min(offset + chunkSize, data.byteLength)
-    const frameData = data.slice(offset, end)
-    const header = Buffer.allocUnsafe(4)
-    header.writeUInt32LE(frameData.byteLength, 0)
-    frames.push(Buffer.concat([header, Buffer.from(frameData)]))
-    offset = end
-  }
-  // End-of-stream sentinel
-  const sentinel = Buffer.allocUnsafe(4)
-  sentinel.writeUInt32LE(0, 0)
-  frames.push(sentinel)
-  return frames
+function payloadHash(payload: Buffer): Buffer {
+  return createHash('sha256').update(payload).digest()
 }
 
 /**
- * Reassemble frames produced by encodeChunked back into a single Buffer.
- * Stops at the first zero-size frame (end sentinel).
+ * Encode a V3 inference message with a requestId field.
+ *
+ * Wire format:
+ *   [uint8: version=3]
+ *   [uint16 LE: requestId length][requestId bytes (UTF-8)]
+ *   [uint32 LE: nTokens][uint32 LE: nEmbd][float32[] tensor data]
+ *   [uint32 LE: sigLen][sig bytes]
+ *   [uint32 LE: pubkeyLen][pubkey bytes]
+ *
+ * The signature covers everything from the version byte through the tensor data.
  */
-export function decodeChunked(frames: Buffer[]): Buffer {
-  const chunks: Buffer[] = []
-  for (const frame of frames) {
-    const size = frame.readUInt32LE(0)
-    if (size === 0) break
-    chunks.push(frame.slice(4, 4 + size))
-  }
-  return Buffer.concat(chunks)
-}
-
-// ── Ed25519 signing helpers ───────────────────────────────────────────────────
-
-/** Compute SHA-256 of the canonical wire bytes (nTokens || nEmbd || tensor). */
-function tensorHash(nTokens: number, nEmbd: number, tensorBytes: Uint8Array): Buffer {
-  const header = Buffer.allocUnsafe(8)
-  header.writeUInt32LE(nTokens, 0)
-  header.writeUInt32LE(nEmbd, 4)
-  return createHash('sha256').update(header).update(tensorBytes).digest()
-}
-
-/** Build a minimal PKCS8 DER wrapper around a 32-byte Ed25519 seed. */
-function buildPkcs8Der(seed: Uint8Array): Uint8Array {
-  // PKCS8 structure for Ed25519:
-  // 30 2e — SEQUENCE (46 bytes)
-  //   02 01 00 — INTEGER 0 (version)
-  //   30 05 06 03 2b 65 70 — SEQUENCE { OID 1.3.101.112 (Ed25519) }
-  //   04 22 04 20 [32 bytes seed] — OCTET STRING { OCTET STRING [seed] }
-  const der = new Uint8Array(48)
-  const header = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20]
-  der.set(header, 0)
-  der.set(seed, 16)
-  return der
-}
-
-/** Build a minimal SPKI DER wrapper around a 32-byte Ed25519 public key. */
-function buildSpkiDer(pubKey: Uint8Array): Uint8Array {
-  // SPKI structure for Ed25519:
-  // 30 2a — SEQUENCE (42 bytes)
-  //   30 05 06 03 2b 65 70 — SEQUENCE { OID 1.3.101.112 }
-  //   03 21 00 [32 bytes key] — BIT STRING (1 unused bit, then key)
-  const der = new Uint8Array(44)
-  const header = [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]
-  der.set(header, 0)
-  der.set(pubKey, 12)
-  return der
-}
-
-/** Sign `hash` with the raw Ed25519 private key seed (32 bytes). Returns 64-byte signature. */
-function signHash(hash: Buffer, privateKeySeed: Uint8Array): Buffer {
-  const pkcs8Der = buildPkcs8Der(privateKeySeed)
-  const keyObj = createPrivateKey({ key: Buffer.from(pkcs8Der), format: 'der', type: 'pkcs8' })
-  return Buffer.from(cryptoSign(null, hash, keyObj))
-}
-
-/** Verify `signature` over `hash` using raw Ed25519 public key bytes (32 bytes). */
-function verifyHash(hash: Buffer, signature: Uint8Array, publicKeyBytes: Uint8Array): boolean {
-  const spkiDer = buildSpkiDer(publicKeyBytes)
-  const keyObj = createPublicKey({ key: Buffer.from(spkiDer), format: 'der', type: 'spki' })
-  return cryptoVerify(null, hash, keyObj, Buffer.from(signature))
-}
-
-/**
- * Encode tensor + Ed25519 signature.
- * Wire format: [base message][uint32 sigLen][sig bytes][uint32 pubkeyLen][pubkey bytes]
- */
-export function encodeMessageSigned(
+export function encodeMessageV3(
   data: Float32Array,
   nTokens: number,
   nEmbd: number,
+  requestId: string,
   privateKey: Uint8Array,
   publicKey: Uint8Array,
 ): Uint8Array {
-  const base = encodeMessage(data, nTokens, nEmbd)
-  // Tensor bytes start at offset 8 in base
-  const tensorBytes = base.slice(8)
-  const hash = tensorHash(nTokens, nEmbd, tensorBytes)
+  const requestIdBytes = Buffer.from(requestId, 'utf8')
+  const tensorBytes = Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+
+  // Build the payload that will be signed: version + requestId fields + nTokens + nEmbd + tensor
+  const payloadLen = 1 + 2 + requestIdBytes.byteLength + 4 + 4 + tensorBytes.byteLength
+  const payload = Buffer.allocUnsafe(payloadLen)
+
+  let offset = 0
+  payload.writeUInt8(3, offset); offset += 1
+  payload.writeUInt16LE(requestIdBytes.byteLength, offset); offset += 2
+  requestIdBytes.copy(payload, offset); offset += requestIdBytes.byteLength
+  payload.writeUInt32LE(nTokens, offset); offset += 4
+  payload.writeUInt32LE(nEmbd, offset); offset += 4
+  tensorBytes.copy(payload, offset)
+
+  const hash = payloadHash(payload)
   const sig = signHash(hash, privateKey)
 
   const sigHeader = Buffer.allocUnsafe(4)
@@ -169,82 +66,92 @@ export function encodeMessageSigned(
   const pubkeyHeader = Buffer.allocUnsafe(4)
   pubkeyHeader.writeUInt32LE(publicKey.byteLength, 0)
 
-  return Buffer.concat([base, sigHeader, sig, pubkeyHeader, Buffer.from(publicKey)])
+  return Buffer.concat([payload, sigHeader, sig, pubkeyHeader, Buffer.from(publicKey)])
 }
 
 /**
- * Decode a signed message. Throws if signature verification fails.
- * Returns the same shape as decodeMessage().
+ * Decode a V3 inference message. Throws if signature verification fails.
+ * Returns { requestId, nTokens, nEmbd, data }.
  */
-export function decodeMessageSigned(buf: Buffer): { nTokens: number; nEmbd: number; data: Float32Array } {
-  const { nTokens, nEmbd, data } = decodeMessage(buf)
+export function decodeMessageV3(buf: Buffer): { requestId: string; nTokens: number; nEmbd: number; data: Float32Array } {
+  if (buf.byteLength < 1) {
+    throw new Error('v3 message: buffer too short for version byte')
+  }
+
+  const version = buf.readUInt8(0)
+  if (version !== 3) {
+    throw new Error(`v3 message: expected version 3, got ${version}`)
+  }
+
+  if (buf.byteLength < 3) {
+    throw new Error('v3 message: buffer too short for requestId length field')
+  }
+  const requestIdLen = buf.readUInt16LE(1)
+
+  let offset = 3
+  if (buf.byteLength < offset + requestIdLen) {
+    throw new Error('v3 message: requestId bytes extend beyond buffer')
+  }
+  const requestId = buf.slice(offset, offset + requestIdLen).toString('utf8')
+  offset += requestIdLen
+
+  if (buf.byteLength < offset + 8) {
+    throw new Error('v3 message: buffer too short for nTokens/nEmbd fields')
+  }
+  const nTokens = buf.readUInt32LE(offset); offset += 4
+  const nEmbd = buf.readUInt32LE(offset); offset += 4
+
   const tensorByteLen = nTokens * nEmbd * 4
-  const sigOffset = 8 + tensorByteLen
+  if (buf.byteLength < offset + tensorByteLen) {
+    throw new Error(`v3 message: tensor bytes extend beyond buffer`)
+  }
+  const tensorEnd = offset + tensorByteLen
 
-  if (buf.byteLength < sigOffset + 8) {
-    throw new Error('v2 message: missing signature fields')
-  }
+  // The payload that was signed is everything before the signature fields
+  const payload = buf.slice(0, tensorEnd)
+  const hash = payloadHash(payload)
 
-  const sigLen = buf.readUInt32LE(sigOffset)
-  if (sigOffset + 4 + sigLen > buf.byteLength) {
-    throw new Error('v2 message: sig bytes extend beyond buffer')
+  offset = tensorEnd
+  if (buf.byteLength < offset + 4) {
+    throw new Error('v3 message: missing signature length field')
   }
-  const sig = buf.slice(sigOffset + 4, sigOffset + 4 + sigLen)
-  const pubkeyOffset = sigOffset + 4 + sigLen
-  if (pubkeyOffset + 4 > buf.byteLength) {
-    throw new Error('v2 message: pubkey length field missing')
+  const sigLen = buf.readUInt32LE(offset); offset += 4
+  if (buf.byteLength < offset + sigLen) {
+    throw new Error('v3 message: sig bytes extend beyond buffer')
   }
-  const pubkeyLen = buf.readUInt32LE(pubkeyOffset)
-  if (pubkeyOffset + 4 + pubkeyLen > buf.byteLength) {
-    throw new Error('v2 message: pubkey bytes extend beyond buffer')
-  }
-  const pubkey = buf.slice(pubkeyOffset + 4, pubkeyOffset + 4 + pubkeyLen)
+  const sig = buf.slice(offset, offset + sigLen); offset += sigLen
 
-  const tensorBytes = buf.slice(8, sigOffset)
-  const hash = tensorHash(nTokens, nEmbd, tensorBytes)
+  if (buf.byteLength < offset + 4) {
+    throw new Error('v3 message: missing pubkey length field')
+  }
+  const pubkeyLen = buf.readUInt32LE(offset); offset += 4
+  if (buf.byteLength < offset + pubkeyLen) {
+    throw new Error('v3 message: pubkey bytes extend beyond buffer')
+  }
+  const pubkey = buf.slice(offset, offset + pubkeyLen)
 
   if (!verifyHash(hash, sig, pubkey)) {
-    throw new Error('Inference message signature verification failed — possible tensor tampering')
+    throw new Error('V3 inference message signature verification failed — possible tensor tampering')
   }
 
-  return { nTokens, nEmbd, data }
+  const floatBuf = Buffer.allocUnsafe(tensorByteLen)
+  buf.copy(floatBuf, 0, tensorEnd - tensorByteLen, tensorEnd)
+  const data = new Float32Array(floatBuf.buffer)
+
+  return { requestId, nTokens, nEmbd, data }
 }
 
-export const INFERENCE_PROTOCOL_V2 = '/opencoral/inference/2.0.0'
-
-async function sendChunked(stream: Stream, data: Uint8Array): Promise<void> {
-  for (const frame of encodeChunked(data)) {
-    await sendWithBackpressure(stream, frame)
-  }
-}
-
-async function collectChunkedStream(
-  stream: AsyncIterable<Uint8Array | { subarray(): Uint8Array }>,
-): Promise<Buffer> {
-  // Collect all raw wire bytes, then re-parse as length-prefixed frames
-  const rawBuf = await collectStream(stream)
-  const frames: Buffer[] = []
-  let pos = 0
-  while (pos + 4 <= rawBuf.byteLength) {
-    const size = rawBuf.readUInt32LE(pos)
-    frames.push(rawBuf.slice(pos, pos + 4 + size))
-    pos += 4 + size
-    if (size === 0) break
-  }
-  return decodeChunked(frames)
-}
-
-export async function registerInferenceHandlerV2(
+export async function registerInferenceHandlerV3(
   libp2p: Libp2p,
   handler: InferenceHandler,
   identity: NodeIdentity,
 ): Promise<void> {
-  await libp2p.handle(INFERENCE_PROTOCOL_V2, async (stream) => {
+  await libp2p.handle(INFERENCE_PROTOCOL_V3, async (stream) => {
     try {
       const buf = await collectChunkedStream(stream)
-      const { nTokens, nEmbd, data } = decodeMessageSigned(buf)
+      const { requestId, nTokens, nEmbd, data } = decodeMessageV3(buf)
       const output = await handler(data, nTokens, nEmbd)
-      const encoded = encodeMessageSigned(output, nTokens, nEmbd, identity.privateKey, identity.publicKey)
+      const encoded = encodeMessageV3(output, nTokens, nEmbd, requestId, identity.privateKey, identity.publicKey)
       await sendChunked(stream, encoded)
       await stream.close()
     } catch (err) {
@@ -253,51 +160,20 @@ export async function registerInferenceHandlerV2(
   }, { force: true })
 }
 
-export async function sendInferenceRequestV2(
+export async function sendInferenceRequestV3(
   libp2p: Libp2p,
   peerId: PeerId,
   input: Float32Array,
   nTokens: number,
   nEmbd: number,
+  requestId: string,
   identity: NodeIdentity,
 ): Promise<Float32Array> {
-  const stream = await libp2p.dialProtocol(peerId, INFERENCE_PROTOCOL_V2)
-  const request = encodeMessageSigned(input, nTokens, nEmbd, identity.privateKey, identity.publicKey)
+  const stream = await libp2p.dialProtocol(peerId, INFERENCE_PROTOCOL_V3)
+  const request = encodeMessageV3(input, nTokens, nEmbd, requestId, identity.privateKey, identity.publicKey)
   await sendChunked(stream, request)
   const [buf] = await Promise.all([collectChunkedStream(stream), stream.close().catch(() => {})])
-  return decodeMessageSigned(buf).data
+  return decodeMessageV3(buf).data
 }
 
-export async function registerInferenceHandler(
-  libp2p: Libp2p,
-  handler: InferenceHandler,
-): Promise<void> {
-  await libp2p.handle(INFERENCE_PROTOCOL, async (stream) => {
-    try {
-      const buf = await collectStream(stream)
-      const { nTokens, nEmbd, data } = decodeMessage(buf)
-      const output = await handler(data, nTokens, nEmbd)
-      const response = encodeMessage(output, nTokens, nEmbd)
-      await sendWithBackpressure(stream, response)
-      await stream.close()
-    } catch (err) {
-      stream.abort(err instanceof Error ? err : new Error(String(err)))
-    }
-  }, { force: true })
-}
 
-export async function sendInferenceRequest(
-  libp2p: Libp2p,
-  peerId: PeerId,
-  input: Float32Array,
-  nTokens: number,
-  nEmbd: number,
-): Promise<Float32Array> {
-  const stream = await libp2p.dialProtocol(peerId, INFERENCE_PROTOCOL)
-  const request = encodeMessage(input, nTokens, nEmbd)
-  await sendWithBackpressure(stream, request)
-  // Half-close the write side concurrently with reading the response,
-  // so the remote receives EOF without a sequential ordering race
-  const [buf] = await Promise.all([collectStream(stream), stream.close()])
-  return decodeMessage(buf).data
-}

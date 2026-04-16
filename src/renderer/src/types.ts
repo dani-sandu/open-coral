@@ -32,6 +32,7 @@ export interface CoverageReport {
   covered: BlockCoverage[]
   missing: number[]
   complete: boolean
+  suggestion?: { start: number; end: number }
 }
 
 // NOTE: Keep in sync with InferenceResult in src/main/block-host.ts.

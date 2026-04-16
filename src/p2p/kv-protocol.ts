@@ -1,6 +1,14 @@
 import type { Libp2p, PeerId, Stream } from '@libp2p/interface'
+import {
+  sendWithBackpressure,
+  encodeChunked,
+  FramedReader,
+  DEFAULT_CHUNK_SIZE,
+} from './stream-utils'
 
-export const KV_PROTOCOL = '/opencoral/kv/1.0.0'
+export const KV_PROTOCOL = '/opencoral/kv/2.0.0'
+
+const KV_IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 const MSG_OPEN    = 0x01
 const MSG_FORWARD = 0x02
@@ -8,155 +16,205 @@ const MSG_CLOSE   = 0x03
 const STATUS_OK   = 0x00
 const STATUS_ERR  = 0x01
 
+const FLAG_RAW     = 0x00
+const FLAG_CHUNKED = 0x01
+
 export interface KVSessionHandler {
   onOpen(sessionId: string, maxSeqLen: number): Promise<{ ok: true }>
-  onForward(sessionId: string, input: Float32Array, nTokens: number, nEmbd: number): Promise<Float32Array>
+  onForward(sessionId: string, input: Float32Array, nTokens: number, nEmbd: number, requestId?: string): Promise<Float32Array>
   onClose(sessionId: string): Promise<void>
 }
 
-// ── Stream helpers ────────────────────────────────────────────────────────────
+// ── Writing helpers ──────────────────────────────────────────────────────────
 
-async function collectStream(stream: AsyncIterable<Uint8Array | { subarray(): Uint8Array }>): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  for await (const chunk of stream) {
-    const bytes: Uint8Array = typeof (chunk as any).subarray === 'function'
-      ? (chunk as any).subarray()
-      : (chunk as Uint8Array)
-    chunks.push(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
-  }
-  return Buffer.concat(chunks)
-}
-
-async function sendWithBackpressure(stream: Stream, data: Uint8Array): Promise<void> {
-  if (!stream.send(data)) {
-    await new Promise<void>(resolve => {
-      stream.addEventListener('drain', () => resolve(), { once: true })
-    })
+async function writeRawMessage(stream: Stream, msgType: number, payload: Buffer): Promise<void> {
+  const header = Buffer.allocUnsafe(2 + 4)
+  header.writeUInt8(msgType, 0)
+  header.writeUInt8(FLAG_RAW, 1)
+  header.writeUInt32LE(payload.byteLength, 2)
+  await sendWithBackpressure(stream, header)
+  if (payload.byteLength > 0) {
+    await sendWithBackpressure(stream, payload)
   }
 }
 
-// ── Message encoding ──────────────────────────────────────────────────────────
-
-function encodeRequest(msgType: number, json: object, tensor?: Float32Array): Buffer {
-  const jsonBytes = Buffer.from(JSON.stringify(json), 'utf-8')
-  const jsonLenBuf = Buffer.allocUnsafe(4)
-  jsonLenBuf.writeUInt32LE(jsonBytes.byteLength, 0)
-  const parts: Buffer[] = [Buffer.from([msgType]), jsonLenBuf, jsonBytes]
-  if (tensor) {
-    parts.push(Buffer.from(tensor.buffer, tensor.byteOffset, tensor.byteLength))
+async function writeChunkedMessage(stream: Stream, msgType: number, payload: Buffer): Promise<void> {
+  const header = Buffer.allocUnsafe(2)
+  header.writeUInt8(msgType, 0)
+  header.writeUInt8(FLAG_CHUNKED, 1)
+  await sendWithBackpressure(stream, header)
+  for (const frame of encodeChunked(payload)) {
+    await sendWithBackpressure(stream, frame)
   }
-  return Buffer.concat(parts)
 }
 
-function decodeRequest(buf: Buffer): { msgType: number; json: any; tensorBytes?: Buffer } {
-  const msgType = buf[0]
-  const jsonLen = buf.readUInt32LE(1)
-  const json = JSON.parse(buf.slice(5, 5 + jsonLen).toString('utf-8'))
-  const tensorBytes = buf.byteLength > 5 + jsonLen ? buf.slice(5 + jsonLen) : undefined
-  return { msgType, json, tensorBytes }
+async function writeResponse(stream: Stream, status: number, payload: Buffer, chunked: boolean): Promise<void> {
+  const header = Buffer.allocUnsafe(2)
+  header.writeUInt8(status, 0)
+  header.writeUInt8(chunked ? FLAG_CHUNKED : FLAG_RAW, 1)
+  await sendWithBackpressure(stream, header)
+  if (chunked) {
+    for (const frame of encodeChunked(payload)) {
+      await sendWithBackpressure(stream, frame)
+    }
+  } else {
+    const lenBuf = Buffer.allocUnsafe(4)
+    lenBuf.writeUInt32LE(payload.byteLength, 0)
+    await sendWithBackpressure(stream, lenBuf)
+    if (payload.byteLength > 0) {
+      await sendWithBackpressure(stream, payload)
+    }
+  }
 }
 
-function encodeOkResponse(): Buffer {
-  const body = Buffer.from('{"ok":true}', 'utf-8')
-  return Buffer.concat([Buffer.from([STATUS_OK]), body])
+// ── Reading helpers ──────────────────────────────────────────────────────────
+
+async function readPayload(reader: FramedReader, flags: number): Promise<Buffer> {
+  if (flags & FLAG_CHUNKED) {
+    const chunks: Buffer[] = []
+    while (true) {
+      const size = await reader.readUint32LE()
+      if (size === 0) break
+      chunks.push(await reader.readExact(size))
+    }
+    return Buffer.concat(chunks)
+  } else {
+    const len = await reader.readUint32LE()
+    if (len === 0) return Buffer.alloc(0)
+    return reader.readExact(len)
+  }
 }
 
-function encodeErrorResponse(msg: string): Buffer {
-  const body = Buffer.from(JSON.stringify({ error: msg }), 'utf-8')
-  return Buffer.concat([Buffer.from([STATUS_ERR]), body])
-}
-
-function encodeTensorResponse(tensor: Float32Array): Buffer {
-  // Prefix with STATUS_OK so the client can distinguish success from error
-  const tensorBuf = Buffer.from(tensor.buffer, tensor.byteOffset, tensor.byteLength)
-  return Buffer.concat([Buffer.from([STATUS_OK]), tensorBuf])
-}
-
-// ── Handler registration ──────────────────────────────────────────────────────
+// ── Handler registration ─────────────────────────────────────────────────────
 
 export async function registerKVHandler(libp2p: Libp2p, handler: KVSessionHandler): Promise<void> {
   await libp2p.handle(KV_PROTOCOL, async (stream) => {
+    const reader = new FramedReader(stream)
+    let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+    function resetIdleTimeout(): Promise<never> {
+      return new Promise((_, reject) => {
+        if (idleTimer) clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => reject(new Error('KV session idle timeout')), KV_IDLE_TIMEOUT_MS)
+      })
+    }
+
     try {
-      const buf = await collectStream(stream)
-      const { msgType, json, tensorBytes } = decodeRequest(buf)
+      while (true) {
+        const timeoutPromise = resetIdleTimeout()
+        const msgType = await Promise.race([reader.readUint8(), timeoutPromise])
+        const flags = await reader.readUint8()
+        const payload = await readPayload(reader, flags)
 
-      let response: Buffer
-
-      if (msgType === MSG_OPEN) {
-        const result = await handler.onOpen(json.sessionId as string, json.maxSeqLen as number)
-        response = result.ok ? encodeOkResponse() : encodeErrorResponse('onOpen rejected')
-      } else if (msgType === MSG_FORWARD) {
-        const { sessionId, nTokens, nEmbd } = json as { sessionId: string; nTokens: number; nEmbd: number }
-        if (!tensorBytes) throw new Error('FORWARD message missing tensor bytes')
-        // Copy into aligned buffer — tensorBytes may have non-multiple-of-4 byteOffset
-        const alignedBuf = Buffer.allocUnsafe(tensorBytes.byteLength)
-        tensorBytes.copy(alignedBuf, 0)
-        const input = new Float32Array(alignedBuf.buffer, 0, tensorBytes.byteLength / 4)
-        const output = await handler.onForward(sessionId, input, nTokens, nEmbd)
-        response = encodeTensorResponse(output)
-      } else if (msgType === MSG_CLOSE) {
-        await handler.onClose(json.sessionId as string)
-        response = encodeOkResponse()
-      } else {
-        response = encodeErrorResponse(`Unknown message type: ${msgType}`)
+        if (msgType === MSG_OPEN) {
+          const json = JSON.parse(payload.toString('utf-8'))
+          await handler.onOpen(json.sessionId as string, json.maxSeqLen as number)
+          await writeResponse(stream, STATUS_OK, Buffer.from('{"ok":true}', 'utf-8'), false)
+        } else if (msgType === MSG_FORWARD) {
+          const jsonLen = payload.readUInt32LE(0)
+          const json = JSON.parse(payload.slice(4, 4 + jsonLen).toString('utf-8'))
+          const { sessionId, nTokens, nEmbd, requestId } = json
+          const tensorBytes = payload.slice(4 + jsonLen)
+          const alignedBuf = Buffer.allocUnsafe(tensorBytes.byteLength)
+          tensorBytes.copy(alignedBuf, 0)
+          const input = new Float32Array(alignedBuf.buffer, 0, tensorBytes.byteLength / 4)
+          const output = await handler.onForward(sessionId, input, nTokens, nEmbd, requestId)
+          const tensorOut = Buffer.from(output.buffer, output.byteOffset, output.byteLength)
+          const useChunked = tensorOut.byteLength > DEFAULT_CHUNK_SIZE
+          await writeResponse(stream, STATUS_OK, tensorOut, useChunked)
+        } else if (msgType === MSG_CLOSE) {
+          const json = JSON.parse(payload.toString('utf-8'))
+          await handler.onClose(json.sessionId as string)
+          await writeResponse(stream, STATUS_OK, Buffer.from('{"ok":true}', 'utf-8'), false)
+          break
+        } else {
+          await writeResponse(stream, STATUS_ERR, Buffer.from(`Unknown msg type: ${msgType}`, 'utf-8'), false)
+          break
+        }
       }
-
-      await sendWithBackpressure(stream, response)
+      if (idleTimer) clearTimeout(idleTimer)
       await stream.close()
     } catch (err) {
+      if (idleTimer) clearTimeout(idleTimer)
       stream.abort(err instanceof Error ? err : new Error(String(err)))
     }
   }, { force: true })
 }
 
-// ── Client functions ──────────────────────────────────────────────────────────
+// ── Client ───────────────────────────────────────────────────────────────────
 
-export async function openRemoteSession(
-  libp2p: Libp2p,
-  peerId: PeerId,
-  sessionId: string,
-  maxSeqLen: number,
-): Promise<void> {
-  const stream = await libp2p.dialProtocol(peerId, KV_PROTOCOL, { signal: AbortSignal.timeout(5000) })
-  const req = encodeRequest(MSG_OPEN, { sessionId, maxSeqLen })
-  await sendWithBackpressure(stream, req)
-  const [buf] = await Promise.all([collectStream(stream), stream.close().catch(() => {})])
-  if (buf[0] === STATUS_ERR) {
-    throw new Error(`KV open failed: ${buf.slice(1).toString('utf-8')}`)
+export class KVSessionClient {
+  private readonly stream: Stream
+  private readonly reader: FramedReader
+  private readonly sessionId: string
+
+  private constructor(stream: Stream, sessionId: string) {
+    this.stream = stream
+    this.reader = new FramedReader(stream)
+    this.sessionId = sessionId
   }
-}
 
-export async function forwardRemote(
-  libp2p: Libp2p,
-  peerId: PeerId,
-  sessionId: string,
-  input: Float32Array,
-  nTokens: number,
-  nEmbd: number,
-): Promise<Float32Array> {
-  const stream = await libp2p.dialProtocol(peerId, KV_PROTOCOL, { signal: AbortSignal.timeout(10000) })
-  const req = encodeRequest(MSG_FORWARD, { sessionId, nTokens, nEmbd }, input)
-  await sendWithBackpressure(stream, req)
-  const [buf] = await Promise.all([collectStream(stream), stream.close().catch(() => {})])
+  static async open(
+    libp2p: Libp2p,
+    peerId: PeerId,
+    sessionId: string,
+    maxSeqLen: number,
+  ): Promise<KVSessionClient> {
+    const stream = await libp2p.dialProtocol(peerId, KV_PROTOCOL, { signal: AbortSignal.timeout(5000) })
+    const client = new KVSessionClient(stream, sessionId)
 
-  if (buf.byteLength === 0) throw new Error('KV forward: empty response')
-  if (buf[0] === STATUS_ERR) {
-    throw new Error(`KV forward failed: ${buf.slice(1).toString('utf-8')}`)
+    const json = Buffer.from(JSON.stringify({ sessionId, maxSeqLen }), 'utf-8')
+    await writeRawMessage(stream, MSG_OPEN, json)
+
+    const status = await client.reader.readUint8()
+    const flags = await client.reader.readUint8()
+    await readPayload(client.reader, flags)
+    if (status === STATUS_ERR) throw new Error(`KV open failed for session ${sessionId}`)
+
+    return client
   }
-  // Success: STATUS_OK byte followed by raw float32 bytes — copy to ensure alignment
-  const tensorBytes = buf.slice(1)
-  const alignedBuf = Buffer.allocUnsafe(tensorBytes.byteLength)
-  tensorBytes.copy(alignedBuf, 0)
-  return new Float32Array(alignedBuf.buffer, 0, tensorBytes.byteLength / 4)
-}
 
-export async function closeRemoteSession(
-  libp2p: Libp2p,
-  peerId: PeerId,
-  sessionId: string,
-): Promise<void> {
-  const stream = await libp2p.dialProtocol(peerId, KV_PROTOCOL, { signal: AbortSignal.timeout(3000) })
-  const req = encodeRequest(MSG_CLOSE, { sessionId })
-  await sendWithBackpressure(stream, req)
-  await Promise.all([collectStream(stream), stream.close().catch(() => {})])
+  async forward(
+    input: Float32Array,
+    nTokens: number,
+    nEmbd: number,
+    requestId?: string,
+  ): Promise<Float32Array> {
+    const jsonObj: any = { sessionId: this.sessionId, nTokens, nEmbd }
+    if (requestId) jsonObj.requestId = requestId
+    const jsonBytes = Buffer.from(JSON.stringify(jsonObj), 'utf-8')
+    const jsonLenBuf = Buffer.allocUnsafe(4)
+    jsonLenBuf.writeUInt32LE(jsonBytes.byteLength, 0)
+    const tensorBuf = Buffer.from(input.buffer, input.byteOffset, input.byteLength)
+    const payload = Buffer.concat([jsonLenBuf, jsonBytes, tensorBuf])
+
+    const useChunked = payload.byteLength > DEFAULT_CHUNK_SIZE
+    if (useChunked) {
+      await writeChunkedMessage(this.stream, MSG_FORWARD, payload)
+    } else {
+      await writeRawMessage(this.stream, MSG_FORWARD, payload)
+    }
+
+    const status = await this.reader.readUint8()
+    const flags = await this.reader.readUint8()
+    const respPayload = await readPayload(this.reader, flags)
+
+    if (status === STATUS_ERR) throw new Error(`KV forward failed: ${respPayload.toString('utf-8')}`)
+
+    const alignedBuf = Buffer.allocUnsafe(respPayload.byteLength)
+    respPayload.copy(alignedBuf, 0)
+    return new Float32Array(alignedBuf.buffer, 0, respPayload.byteLength / 4)
+  }
+
+  async close(): Promise<void> {
+    const json = Buffer.from(JSON.stringify({ sessionId: this.sessionId }), 'utf-8')
+    await writeRawMessage(this.stream, MSG_CLOSE, json)
+
+    const status = await this.reader.readUint8()
+    const flags = await this.reader.readUint8()
+    await readPayload(this.reader, flags)
+    if (status === STATUS_ERR) console.warn(`KV close returned error for session ${this.sessionId}`)
+
+    await this.stream.close()
+  }
 }

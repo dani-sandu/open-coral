@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { writeFileSync, unlinkSync } from 'fs'
+import { writeFileSync, unlinkSync, mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
+import { tmpdir } from 'os'
 import { buildTinyGGUF, TINY_CONFIG } from './fixtures/make-tiny-gguf'
 import { BlockRunner } from '../../src/inference/block-runner'
 import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import { BlockRegistry } from '../../src/p2p/block-registry'
-import { registerInferenceHandler } from '../../src/p2p/inference-protocol'
+import { registerInferenceHandlerV3 } from '../../src/p2p/inference-protocol'
 import { SequenceManager, type ChainStepCandidate } from '../../src/inference/sequence-manager'
+import { loadOrCreateIdentity, type NodeIdentity } from '../../src/main/identity'
+import { PeerLatencyTracker } from '../../src/p2p/peer-latency'
 
 const MODEL_PATH = join(import.meta.dir, 'fixtures', '_seq-test.gguf')
 
@@ -17,8 +20,12 @@ describe('SequenceManager', () => {
   let runnerB: BlockRunner   // hosts block 1
   let registryA: BlockRegistry
   let registryB: BlockRegistry
+  let identity: NodeIdentity
+  let identityDir: string
 
   beforeAll(async () => {
+    identityDir = mkdtempSync(join(tmpdir(), 'coral-seq-test-'))
+    identity = await loadOrCreateIdentity(identityDir)
     writeFileSync(MODEL_PATH, buildTinyGGUF())
 
     nodeA = await createOpenCoralNode()
@@ -35,7 +42,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
     })
-    registryA = new BlockRegistry(nodeA.libp2p, {})
+    registryA = new BlockRegistry(nodeA.libp2p, 'test-org/test-model', {})
     await registryA.start()
 
     // Node B hosts block 1 and serves inference requests
@@ -45,12 +52,12 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
     })
-    registryB = new BlockRegistry(nodeB.libp2p, {})
+    registryB = new BlockRegistry(nodeB.libp2p, 'test-org/test-model', {})
     await registryB.start()
 
-    await registerInferenceHandler(nodeB.libp2p, async (input, nTokens) =>
+    await registerInferenceHandlerV3(nodeB.libp2p, async (input, nTokens) =>
       runnerB.forward(input, nTokens)
-    )
+    , identity)
 
     // Wait for DHT provider records to propagate
     await new Promise(r => setTimeout(r, 500))
@@ -64,6 +71,7 @@ describe('SequenceManager', () => {
     await nodeA.stop()
     await nodeB.stop()
     try { unlinkSync(MODEL_PATH) } catch {}
+    rmSync(identityDir, { recursive: true })
   })
 
   it('planChain() finds a complete coverage across two peers', async () => {
@@ -76,6 +84,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
       getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
+      identity,
     })
 
     const chain = await mgr.planChain()
@@ -94,6 +103,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
       getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
+      identity,
     })
 
     const chain = await mgr.planChain()
@@ -115,6 +125,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
       getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
+      identity,
     })
 
     const chain = await mgr.planChain()
@@ -135,6 +146,7 @@ describe('SequenceManager', () => {
       localRunner: null,
       totalBlocks: 100,
       hiddenSize: TINY_CONFIG.n_embd,
+      identity,
     })
 
     await expect(mgr.planChain()).rejects.toThrow('No peer found')
@@ -150,6 +162,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks,
       hiddenSize: TINY_CONFIG.n_embd,
       getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
+      identity,
     })
 
     const report = await mgr.checkCoverage()
@@ -170,6 +183,7 @@ describe('SequenceManager', () => {
       totalBlocks: TINY_CONFIG.n_blocks + 1,
       hiddenSize: TINY_CONFIG.n_embd,
       getPeerBlockRange: (peerId) => peerRanges.get(peerId) ?? null,
+      identity,
     })
 
     const report = await mgr.checkCoverage()
@@ -180,6 +194,9 @@ describe('SequenceManager', () => {
 
 describe('SequenceManager — fault tolerance', () => {
   it('retries with the next candidate when the first peer throws', async () => {
+    const ftIdentityDir = mkdtempSync(join(tmpdir(), 'coral-ft-test-'))
+    const ftIdentity = await loadOrCreateIdentity(ftIdentityDir)
+
     const nodeA = await createOpenCoralNode()
     const nodeB = await createOpenCoralNode()
     await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
@@ -187,7 +204,7 @@ describe('SequenceManager — fault tolerance', () => {
     // Both cover blocks 0–1 (TINY_CONFIG.n_blocks = 2).
     // nodeA has NO handler registered — dialing it on the inference protocol will throw.
     // nodeB has a handler that echoes input.
-    await registerInferenceHandler(nodeB.libp2p, async (input) => input)
+    await registerInferenceHandlerV3(nodeB.libp2p, async (input) => input, ftIdentity)
 
     const candidates: ChainStepCandidate[] = [
       { peerId: nodeA.libp2p.peerId.toString(), blockStart: 0, blockEnd: 1, multiaddr: nodeA.libp2p.getMultiaddrs()[0].toString() },
@@ -199,6 +216,7 @@ describe('SequenceManager — fault tolerance', () => {
       localRunner: null,
       totalBlocks: 2,
       hiddenSize: TINY_CONFIG.n_embd,
+      identity: ftIdentity,
     })
 
     const chain = await mgr.planChainWithCandidates(candidates)
@@ -211,5 +229,93 @@ describe('SequenceManager — fault tolerance', () => {
 
     await nodeA.stop()
     await nodeB.stop()
+    rmSync(ftIdentityDir, { recursive: true })
+  }, 15000)
+})
+
+describe('SequenceManager — latency-aware planning', () => {
+  it('splits range when a faster peer covers part of it', async () => {
+    const nodeA = await createOpenCoralNode()
+    const nodeB = await createOpenCoralNode()
+    const nodeC = await createOpenCoralNode()
+    await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
+    await nodeA.libp2p.dial(nodeC.libp2p.getMultiaddrs()[0])
+
+    const identityDir2 = mkdtempSync(join(tmpdir(), 'coral-lat-test-'))
+    const identity2 = await loadOrCreateIdentity(identityDir2)
+
+    const latencyTracker = new PeerLatencyTracker()
+    latencyTracker.record(nodeB.peerId, 200)
+    latencyTracker.record(nodeC.peerId, 20)
+
+    const candidates: ChainStepCandidate[] = [
+      { peerId: nodeB.peerId, blockStart: 0, blockEnd: 7, multiaddr: nodeB.libp2p.getMultiaddrs()[0].toString() },
+      { peerId: nodeC.peerId, blockStart: 0, blockEnd: 3, multiaddr: nodeC.libp2p.getMultiaddrs()[0].toString() },
+    ]
+
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: null,
+      totalBlocks: 8,
+      hiddenSize: 16,
+      latencyTracker,
+      identity: identity2,
+    })
+
+    const chain = await mgr.planChainWithCandidates(candidates)
+
+    expect(chain.length).toBe(2)
+    expect(chain[0].blockStart).toBe(0)
+    expect(chain[0].blockEnd).toBe(3)
+    expect(chain[0].candidates[0].peerId).toBe(nodeC.peerId)
+    expect(chain[1].blockStart).toBe(4)
+    expect(chain[1].blockEnd).toBe(7)
+    expect(chain[1].candidates[0].peerId).toBe(nodeB.peerId)
+
+    await nodeA.stop()
+    await nodeB.stop()
+    await nodeC.stop()
+    rmSync(identityDir2, { recursive: true })
+  }, 15000)
+
+  it('prefers continuation when latencies are similar (hop penalty)', async () => {
+    const nodeA = await createOpenCoralNode()
+    const nodeB = await createOpenCoralNode()
+    const nodeC = await createOpenCoralNode()
+    await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
+    await nodeA.libp2p.dial(nodeC.libp2p.getMultiaddrs()[0])
+
+    const identityDir3 = mkdtempSync(join(tmpdir(), 'coral-lat-test2-'))
+    const identity3 = await loadOrCreateIdentity(identityDir3)
+
+    const latencyTracker = new PeerLatencyTracker()
+    latencyTracker.record(nodeB.peerId, 100)
+    latencyTracker.record(nodeC.peerId, 90)
+
+    const candidates: ChainStepCandidate[] = [
+      { peerId: nodeB.peerId, blockStart: 0, blockEnd: 7, multiaddr: nodeB.libp2p.getMultiaddrs()[0].toString() },
+      { peerId: nodeC.peerId, blockStart: 0, blockEnd: 3, multiaddr: nodeC.libp2p.getMultiaddrs()[0].toString() },
+    ]
+
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: null,
+      totalBlocks: 8,
+      hiddenSize: 16,
+      latencyTracker,
+      identity: identity3,
+    })
+
+    const chain = await mgr.planChainWithCandidates(candidates)
+
+    // Should NOT split — hop penalty (50ms) makes B's 100ms continuation better than C's 90ms + 50ms penalty
+    expect(chain.length).toBe(1)
+    expect(chain[0].blockStart).toBe(0)
+    expect(chain[0].blockEnd).toBe(7)
+
+    await nodeA.stop()
+    await nodeB.stop()
+    await nodeC.stop()
+    rmSync(identityDir3, { recursive: true })
   }, 15000)
 })

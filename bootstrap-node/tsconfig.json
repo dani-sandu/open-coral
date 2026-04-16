@@ -7,8 +7,8 @@
     "types": ["bun-types"],
     "strict": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "."
+    "noEmit": true,
+    "rootDir": ".."
   },
-  "include": ["index.ts"]
+  "include": ["index.ts", "../src/p2p/key-registry.ts", "../src/p2p/stream-utils.ts", "../src/p2p/ed25519-helpers.ts"]
 }

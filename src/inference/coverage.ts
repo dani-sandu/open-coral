@@ -1,3 +1,5 @@
+import type { BlockRange } from './types'
+
 export interface BlockCoverage {
   blockStart: number
   blockEnd: number
@@ -12,6 +14,8 @@ export interface CoverageReport {
   /** Block indices (0-based) with no coverage from any peer */
   missing: number[]
   complete: boolean
+  /** Suggested block range to host (largest contiguous gap), if any */
+  suggestion?: BlockRange
 }
 
 /**
@@ -46,4 +50,36 @@ export function computeCoverage(
   }
 
   return { totalBlocks, covered, missing, complete: missing.length === 0 }
+}
+
+export function suggestBlockRange(report: CoverageReport): BlockRange | null {
+  if (report.missing.length === 0) return null
+
+  let bestStart = report.missing[0]
+  let bestEnd = report.missing[0]
+  let bestLen = 1
+  let curStart = report.missing[0]
+  let curEnd = report.missing[0]
+
+  for (let i = 1; i < report.missing.length; i++) {
+    if (report.missing[i] === curEnd + 1) {
+      curEnd = report.missing[i]
+    } else {
+      const curLen = curEnd - curStart + 1
+      if (curLen > bestLen) {
+        bestStart = curStart
+        bestEnd = curEnd
+        bestLen = curLen
+      }
+      curStart = report.missing[i]
+      curEnd = report.missing[i]
+    }
+  }
+  const curLen = curEnd - curStart + 1
+  if (curLen > bestLen) {
+    bestStart = curStart
+    bestEnd = curEnd
+  }
+
+  return { start: bestStart, end: bestEnd }
 }

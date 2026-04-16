@@ -1,17 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
-import { announceBlocks, findPeerForBlock, clearBlocks, announcePresence, findCoralPeers } from '../../src/p2p/dht'
+import { announceModel, findModelPeers, announcePresence, findCoralPeers } from '../../src/p2p/dht'
 
-describe('DHT block announcements', () => {
+describe('DHT model announcements', () => {
   let nodeA: OpenCoralNode
   let nodeB: OpenCoralNode
 
   beforeAll(async () => {
     nodeA = await createOpenCoralNode()
     nodeB = await createOpenCoralNode()
-    // Connect A ↔ B so they share a routing table
     await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
-    // Give DHT time to bootstrap (exchange routing tables)
     await new Promise(r => setTimeout(r, 300))
   })
 
@@ -20,21 +18,20 @@ describe('DHT block announcements', () => {
     await nodeB.stop()
   })
 
-  it('announceBlocks() resolves without error', async () => {
-    await expect(announceBlocks(nodeA.libp2p, 0, 7)).resolves.toBeUndefined()
+  it('announceModel() resolves without error', async () => {
+    await expect(announceModel(nodeA.libp2p, 'test-org/test-model')).resolves.toBeUndefined()
   })
 
-  it('findPeerForBlock() returns the announcing peer', async () => {
-    await announceBlocks(nodeA.libp2p, 8, 15)
-    // Give provider record time to propagate
+  it('findModelPeers() returns the announcing peer', async () => {
+    await announceModel(nodeA.libp2p, 'test-org/model-abc')
     await new Promise(r => setTimeout(r, 200))
-    const peers = await findPeerForBlock(nodeB.libp2p, 10)
+    const peers = await findModelPeers(nodeB.libp2p, 'test-org/model-abc')
     const peerIds = peers.map(p => p.peerId)
     expect(peerIds).toContain(nodeA.peerId)
   })
 
-  it('findPeerForBlock() returns empty for unannounced block', async () => {
-    const peers = await findPeerForBlock(nodeB.libp2p, 100)
+  it('findModelPeers() returns empty for unannounced model', async () => {
+    const peers = await findModelPeers(nodeB.libp2p, 'nonexistent/model')
     expect(peers).toHaveLength(0)
   })
 })

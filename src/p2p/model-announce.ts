@@ -1,5 +1,6 @@
 import type { Libp2p } from 'libp2p'
 import type { PeerId, Stream } from '@libp2p/interface'
+import { collectStream } from './stream-utils'
 
 export const MODEL_INFO_PROTOCOL = '/opencoral/modelinfo/1.0.0'
 
@@ -11,18 +12,6 @@ export interface PeerModelInfoPayload {
   totalBlocks: number
   hiddenSize: number
   architecture: string
-}
-
-async function collectStream(stream: AsyncIterable<Uint8Array | { subarray(): Uint8Array }>): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  for await (const chunk of stream) {
-    // libp2p streams yield Uint8ArrayList (has .subarray()) or plain Uint8Array
-    const bytes: Uint8Array = typeof (chunk as any).subarray === 'function'
-      ? (chunk as any).subarray()
-      : (chunk as Uint8Array)
-    chunks.push(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
-  }
-  return Buffer.concat(chunks)
 }
 
 export async function registerModelInfoHandler(

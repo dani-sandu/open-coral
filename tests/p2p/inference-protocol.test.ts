@@ -1,100 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import {
-  INFERENCE_PROTOCOL,
-  INFERENCE_PROTOCOL_V2,
-  registerInferenceHandler,
-  registerInferenceHandlerV2,
-  sendInferenceRequest,
-  sendInferenceRequestV2,
-  type InferenceHandler,
+  INFERENCE_PROTOCOL_V3,
+  registerInferenceHandlerV3,
+  sendInferenceRequestV3,
   encodeChunked,
   decodeChunked,
-  encodeMessageSigned,
-  decodeMessageSigned,
+  encodeMessageV3,
+  decodeMessageV3,
 } from '../../src/p2p/inference-protocol'
 import { loadOrCreateIdentity, type NodeIdentity } from '../../src/main/identity'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-
-describe('inference protocol', () => {
-  let nodeA: OpenCoralNode
-  let nodeB: OpenCoralNode
-
-  beforeAll(async () => {
-    nodeA = await createOpenCoralNode()
-    nodeB = await createOpenCoralNode()
-    await nodeA.libp2p.dial(nodeB.libp2p.getMultiaddrs()[0])
-  })
-
-  afterAll(async () => {
-    await nodeA.stop()
-    await nodeB.stop()
-  })
-
-  it('protocol ID is correct', () => {
-    expect(INFERENCE_PROTOCOL).toBe('/opencoral/inference/1.0.0')
-  })
-
-  it('handler receives correct tensor shape', async () => {
-    let receivedTokens = 0
-    let receivedEmbd = 0
-
-    const handler: InferenceHandler = async (input, nTokens, nEmbd) => {
-      receivedTokens = nTokens
-      receivedEmbd = nEmbd
-      return input  // echo
-    }
-    await registerInferenceHandler(nodeB.libp2p, handler)
-
-    const input = new Float32Array(3 * 16).fill(0.5)
-    await sendInferenceRequest(nodeA.libp2p, nodeB.libp2p.peerId, input, 3, 16)
-
-    expect(receivedTokens).toBe(3)
-    expect(receivedEmbd).toBe(16)
-  })
-
-  it('response is a Float32Array with the correct length', async () => {
-    const handler: InferenceHandler = async (input) => input  // identity
-
-    // Unregister any previous handler and re-register
-    try { await nodeB.libp2p.unhandle(INFERENCE_PROTOCOL) } catch {}
-    await registerInferenceHandler(nodeB.libp2p, handler)
-
-    const nTokens = 2
-    const nEmbd = 8
-    const input = new Float32Array(nTokens * nEmbd).fill(0.1)
-    const output = await sendInferenceRequest(nodeA.libp2p, nodeB.libp2p.peerId, input, nTokens, nEmbd)
-
-    expect(output).toBeInstanceOf(Float32Array)
-    expect(output.length).toBe(nTokens * nEmbd)
-  })
-
-  it('response values match echo handler output', async () => {
-    try { await nodeB.libp2p.unhandle(INFERENCE_PROTOCOL) } catch {}
-    await registerInferenceHandler(nodeB.libp2p, async (input) => input)
-
-    const input = new Float32Array([1.1, 2.2, 3.3, 4.4])
-    const output = await sendInferenceRequest(nodeA.libp2p, nodeB.libp2p.peerId, input, 1, 4)
-
-    // Float32 round-trip tolerance (IEEE 754 single precision)
-    for (let i = 0; i < input.length; i++) {
-      expect(output[i]).toBeCloseTo(input[i], 5)
-    }
-  })
-
-  it('roundtrip with multi-token batch', async () => {
-    try { await nodeB.libp2p.unhandle(INFERENCE_PROTOCOL) } catch {}
-    await registerInferenceHandler(nodeB.libp2p, async (input) => input)
-
-    const nTokens = 4
-    const nEmbd = 8
-    const input = new Float32Array(nTokens * nEmbd).fill(0.2)
-    const output = await sendInferenceRequest(nodeA.libp2p, nodeB.libp2p.peerId, input, nTokens, nEmbd)
-    expect(output.length).toBe(nTokens * nEmbd)
-  })
-})
 
 describe('chunked framing helpers', () => {
   it('encodeChunked produces correct frame structure', () => {
@@ -134,87 +52,85 @@ describe('chunked framing helpers', () => {
   })
 })
 
-describe('inference protocol v2 — chunked framing', () => {
-  let nodeE: OpenCoralNode
-  let nodeF: OpenCoralNode
+
+describe('inference protocol v3 — requestId', () => {
   let identity: NodeIdentity
   let identityDir: string
 
   beforeAll(async () => {
-    identityDir = mkdtempSync(join(tmpdir(), 'coral-v2-test-'))
+    identityDir = mkdtempSync(join(tmpdir(), 'coral-v3-test-'))
     identity = await loadOrCreateIdentity(identityDir)
-    nodeE = await createOpenCoralNode()
-    nodeF = await createOpenCoralNode()
-    await nodeE.libp2p.dial(nodeF.libp2p.getMultiaddrs()[0])
   })
 
-  afterAll(async () => {
-    await nodeE.stop()
-    await nodeF.stop()
+  afterAll(() => {
     rmSync(identityDir, { recursive: true })
   })
 
-  it('INFERENCE_PROTOCOL_V2 is correct string', () => {
-    expect(INFERENCE_PROTOCOL_V2).toBe('/opencoral/inference/2.0.0')
+  it('INFERENCE_PROTOCOL_V3 is correct string', () => {
+    expect(INFERENCE_PROTOCOL_V3).toBe('/opencoral/inference/3.0.0')
   })
 
-  it('v2 roundtrip: sends and receives correct tensor shape', async () => {
-    await registerInferenceHandlerV2(nodeF.libp2p, async (input, nTokens, nEmbd) => {
-      expect(nTokens).toBe(4)
-      expect(nEmbd).toBe(8)
-      return input
-    }, identity)
+  it('encodeMessageV3 / decodeMessageV3 roundtrip preserves requestId', () => {
+    const data = new Float32Array([1.1, 2.2, 3.3, 4.4])
+    const requestId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const buf = Buffer.from(encodeMessageV3(data, 1, 4, requestId, identity.privateKey, identity.publicKey))
+    const decoded = decodeMessageV3(buf)
+    expect(decoded.requestId).toBe(requestId)
+    expect(decoded.nTokens).toBe(1)
+    expect(decoded.nEmbd).toBe(4)
+    for (let i = 0; i < data.length; i++) {
+      expect(decoded.data[i]).toBeCloseTo(data[i], 5)
+    }
+  })
 
-    const input = new Float32Array(4 * 8).fill(0.5)
-    const output = await sendInferenceRequestV2(nodeE.libp2p, nodeF.libp2p.peerId, input, 4, 8, identity)
+  it('decodeMessageV3 throws on tampered requestId', () => {
+    const data = new Float32Array([1, 2, 3, 4])
+    const requestId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const buf = Buffer.from(encodeMessageV3(data, 1, 4, requestId, identity.privateKey, identity.publicKey))
+    buf[3] ^= 0xFF
+    expect(() => decodeMessageV3(buf)).toThrow('signature verification failed')
+  })
+
+  it('version byte is 3', () => {
+    const data = new Float32Array([1, 2])
+    const buf = Buffer.from(encodeMessageV3(data, 1, 2, 'test-id', identity.privateKey, identity.publicKey))
+    expect(buf[0]).toBe(3)
+  })
+})
+
+describe('inference protocol v3 — network roundtrip', () => {
+  let nodeG: OpenCoralNode
+  let nodeH: OpenCoralNode
+  let identity: NodeIdentity
+  let identityDir: string
+
+  beforeAll(async () => {
+    identityDir = mkdtempSync(join(tmpdir(), 'coral-v3-net-'))
+    identity = await loadOrCreateIdentity(identityDir)
+    nodeG = await createOpenCoralNode()
+    nodeH = await createOpenCoralNode()
+    await nodeG.libp2p.dial(nodeH.libp2p.getMultiaddrs()[0])
+  })
+
+  afterAll(async () => {
+    await nodeG.stop()
+    await nodeH.stop()
+    rmSync(identityDir, { recursive: true })
+  })
+
+  it('v3 roundtrip preserves requestId and tensor data', async () => {
+    await registerInferenceHandlerV3(nodeH.libp2p, async (input) => input, identity)
+
+    const input = new Float32Array(4 * 8).fill(0.3)
+    const requestId = 'test-req-001'
+    const output = await sendInferenceRequestV3(
+      nodeG.libp2p, nodeH.libp2p.peerId, input, 4, 8, requestId, identity,
+    )
 
     expect(output).toBeInstanceOf(Float32Array)
     expect(output.length).toBe(4 * 8)
     for (let i = 0; i < input.length; i++) {
-      expect(output[i]).toBeCloseTo(0.5, 5)
-    }
-  })
-
-  it('v2 roundtrip: second request on same connection succeeds', async () => {
-    // Previously this required fresh nodes due to Bun's createCipheriv nonce issue.
-    // pureJsCrypto (@noble/ciphers) handles incremented nonces correctly across all runtimes.
-    await registerInferenceHandlerV2(nodeF.libp2p, async (input) => input, identity)
-
-    const nTokens = 16
-    const nEmbd = 8
-    const input = new Float32Array(nTokens * nEmbd).fill(0.1)
-    const output = await sendInferenceRequestV2(nodeE.libp2p, nodeF.libp2p.peerId, input, nTokens, nEmbd, identity)
-    expect(output.length).toBe(nTokens * nEmbd)
-  })
-})
-
-describe('signed tensor messages', () => {
-  it('encodeMessageSigned / decodeMessageSigned roundtrip', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'coral-id-test-'))
-    try {
-      const identity = await loadOrCreateIdentity(dir)
-      const data = new Float32Array([1.1, 2.2, 3.3, 4.4])
-      const buf = Buffer.from(encodeMessageSigned(data, 1, 4, identity.privateKey, identity.publicKey))
-      const { nTokens, nEmbd, data: decoded } = decodeMessageSigned(buf)
-      expect(nTokens).toBe(1)
-      expect(nEmbd).toBe(4)
-      for (let i = 0; i < data.length; i++) expect(decoded[i]).toBeCloseTo(data[i], 5)
-    } finally {
-      rmSync(dir, { recursive: true })
-    }
-  })
-
-  it('decodeMessageSigned throws on tampered tensor', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'coral-id-test2-'))
-    try {
-      const identity = await loadOrCreateIdentity(dir)
-      const data = new Float32Array([1, 2, 3, 4])
-      const buf = Buffer.from(encodeMessageSigned(data, 1, 4, identity.privateKey, identity.publicKey))
-      // Tamper with tensor byte at offset 8
-      buf[8] ^= 0xFF
-      expect(() => decodeMessageSigned(buf)).toThrow('signature verification failed')
-    } finally {
-      rmSync(dir, { recursive: true })
+      expect(output[i]).toBeCloseTo(0.3, 5)
     }
   })
 })
