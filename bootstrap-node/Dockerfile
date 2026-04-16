@@ -1,11 +1,15 @@
 FROM oven/bun:alpine AS base
 
-WORKDIR /app
+WORKDIR /app/bootstrap-node
 
-COPY package.json bun.lock ./
+COPY bootstrap-node/package.json bootstrap-node/bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-COPY index.ts tsconfig.json ./
+COPY bootstrap-node/index.ts bootstrap-node/tsconfig.json ./
+
+# Copy source files imported from the parent src/ tree
+COPY src/p2p/key-registry.ts src/p2p/stream-utils.ts src/p2p/ed25519-helpers.ts /app/src/p2p/
+COPY src/main/identity.ts /app/src/main/
 
 EXPOSE 4001
 

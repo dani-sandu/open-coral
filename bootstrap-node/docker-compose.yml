@@ -1,6 +1,8 @@
 services:
   bootstrap:
-    build: .
+    build:
+      context: ..
+      dockerfile: bootstrap-node/Dockerfile
     ports:
       - "4001:4001"
     volumes:
