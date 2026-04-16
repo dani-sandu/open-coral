@@ -3,13 +3,11 @@ import { createOpenCoralNode, type OpenCoralNode } from '../../src/p2p/node'
 import {
   KV_PROTOCOL,
   registerKVHandler,
-  openRemoteSession,
-  forwardRemote,
-  closeRemoteSession,
+  KVSessionClient,
   type KVSessionHandler,
 } from '../../src/p2p/kv-protocol'
 
-describe('KV session protocol', () => {
+describe('KV session protocol — persistent streams', () => {
   let nodeA: OpenCoralNode
   let nodeB: OpenCoralNode
 
@@ -25,57 +23,76 @@ describe('KV session protocol', () => {
   })
 
   it('KV_PROTOCOL is correct', () => {
-    expect(KV_PROTOCOL).toBe('/opencoral/kv/1.0.0')
+    expect(KV_PROTOCOL).toBe('/opencoral/kv/2.0.0')
   })
 
-  it('open → forward → close lifecycle works', async () => {
-    const sessions = new Map<string, Float32Array[]>()
-
+  it('open → multiple forwards → close on single stream', async () => {
     const handler: KVSessionHandler = {
-      onOpen: async (sessionId, _maxSeqLen) => {
-        sessions.set(sessionId, [])
+      onOpen: async (sessionId) => {
         return { ok: true }
       },
-      onForward: async (sessionId, input, _nTokens, _nEmbd) => {
-        sessions.get(sessionId)!.push(input)
-        // Echo the input as output (identity transform)
-        return input
+      onForward: async (sessionId, input) => {
+        return input  // echo
       },
-      onClose: async (sessionId) => {
-        sessions.delete(sessionId)
-      },
+      onClose: async (sessionId) => {},
     }
 
     await registerKVHandler(nodeB.libp2p, handler)
 
-    const sessionId = 'test-session-1'
-    await openRemoteSession(nodeA.libp2p, nodeB.libp2p.peerId, sessionId, 128)
+    const client = await KVSessionClient.open(
+      nodeA.libp2p, nodeB.libp2p.peerId, 'sess-1', 128,
+    )
 
-    const input = new Float32Array(2 * 4).fill(0.7)
-    const output = await forwardRemote(nodeA.libp2p, nodeB.libp2p.peerId, sessionId, input, 2, 4)
+    const input1 = new Float32Array(2 * 4).fill(0.5)
+    const out1 = await client.forward(input1, 2, 4)
+    expect(out1.length).toBe(8)
+    for (let i = 0; i < out1.length; i++) expect(out1[i]).toBeCloseTo(0.5, 5)
 
-    expect(output).toBeInstanceOf(Float32Array)
-    expect(output.length).toBe(2 * 4)
-    for (let i = 0; i < input.length; i++) {
-      expect(output[i]).toBeCloseTo(0.7, 5)
-    }
+    const input2 = new Float32Array(1 * 4).fill(0.9)
+    const out2 = await client.forward(input2, 1, 4)
+    expect(out2.length).toBe(4)
+    for (let i = 0; i < out2.length; i++) expect(out2[i]).toBeCloseTo(0.9, 5)
 
-    await closeRemoteSession(nodeA.libp2p, nodeB.libp2p.peerId, sessionId)
-    expect(sessions.has(sessionId)).toBe(false)
+    await client.close()
   })
 
-  it('forwardRemote on unknown session throws', async () => {
+  it('forward with requestId passes through', async () => {
+    let lastRequestId: string | undefined
+
     const handler: KVSessionHandler = {
       onOpen: async () => ({ ok: true }),
-      onForward: async (sessionId) => { throw new Error(`Unknown session: ${sessionId}`) },
+      onForward: async (_sessionId, input, _nTokens, _nEmbd, requestId) => {
+        lastRequestId = requestId
+        return input
+      },
       onClose: async () => {},
     }
+
     try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
     await registerKVHandler(nodeB.libp2p, handler)
 
-    const input = new Float32Array(4)
-    await expect(
-      forwardRemote(nodeA.libp2p, nodeB.libp2p.peerId, 'no-such-session', input, 1, 4)
-    ).rejects.toThrow()
+    const client = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'sess-2', 64)
+    await client.forward(new Float32Array(4), 1, 4, 'trace-abc')
+    await client.close()
+
+    expect(lastRequestId).toBe('trace-abc')
+  })
+
+  it('large tensor uses chunked framing', async () => {
+    const handler: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handler)
+
+    const client = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'sess-3', 2048)
+    // 256 tokens × 128 dim × 4 bytes = 128KB — exceeds DEFAULT_CHUNK_SIZE
+    const big = new Float32Array(256 * 128).fill(0.1)
+    const out = await client.forward(big, 256, 128)
+    expect(out.length).toBe(256 * 128)
+    await client.close()
   })
 })

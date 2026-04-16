@@ -1,5 +1,7 @@
 const ALPHA = 0.2  // EWMA smoothing factor — higher = faster response to new samples
 
+export const DEFAULT_LATENCY_MS = 500
+
 /**
  * Tracks per-peer round-trip time using exponential weighted moving average.
  * Unknown peers have an estimate of Infinity so they rank last during selection.

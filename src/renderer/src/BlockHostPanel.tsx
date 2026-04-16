@@ -12,6 +12,7 @@ export default function BlockHostPanel(): React.JSX.Element {
   const [state, setState] = useState<HostingState | null>(null)
   const [blockStart, setStart] = useState(0)
   const [blockEnd, setEnd] = useState(0)
+  const [suggestion, setSuggestion] = useState<{ start: number; end: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -23,8 +24,22 @@ export default function BlockHostPanel(): React.JSX.Element {
     setModel(m)
     setState(s)
     if (m && !s) {
-      setStart(0)
-      setEnd(Math.max(0, Math.floor(m.totalBlocks / 2) - 1))
+      try {
+        const coverage = await window.opencoral.checkCoverage()
+        if (coverage?.suggestion) {
+          setSuggestion(coverage.suggestion)
+          setStart(coverage.suggestion.start)
+          setEnd(coverage.suggestion.end)
+        } else {
+          setSuggestion(null)
+          setStart(0)
+          setEnd(Math.max(0, Math.floor(m.totalBlocks / 2) - 1))
+        }
+      } catch {
+        setSuggestion(null)
+        setStart(0)
+        setEnd(Math.max(0, Math.floor(m.totalBlocks / 2) - 1))
+      }
     }
   }, [])
 
@@ -93,6 +108,12 @@ export default function BlockHostPanel(): React.JSX.Element {
               />
             </label>
           </div>
+
+          {suggestion && (
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
+              Suggested: blocks {suggestion.start}–{suggestion.end} are uncovered on the network
+            </div>
+          )}
 
           <button
             onClick={start} disabled={busy}

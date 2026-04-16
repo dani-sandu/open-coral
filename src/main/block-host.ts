@@ -2,11 +2,12 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { AsyncBlockRunner } from '../inference/native-worker'
 import { BlockRegistry } from '../p2p/block-registry'
-import { registerInferenceHandler, registerInferenceHandlerV2 } from '../p2p/inference-protocol'
-import { registerKVHandler, openRemoteSession, forwardRemote, closeRemoteSession, type KVSessionHandler } from '../p2p/kv-protocol'
+import { registerInferenceHandlerV3 } from '../p2p/inference-protocol'
+import { registerKVHandler, KVSessionClient, type KVSessionHandler } from '../p2p/kv-protocol'
+import { PipelineScheduler } from '../inference/pipeline-scheduler'
 import { getCurrentModel, getCurrentGGUFHeader } from './model-manager'
 import { SequenceManager, type ChainStepWithCandidates } from '../inference/sequence-manager'
-import type { CoverageReport } from '../inference/coverage'
+import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
 import { createTokenizer, type Tokenizer } from '../inference/tokenizer'
 import { peerIdFromString } from '@libp2p/peer-id'
 import type { OpenCoralNode } from '../p2p/node'
@@ -133,13 +134,10 @@ export function setupBlockHostIPC(
       hiddenSize: model.hiddenSize,
     })
 
-    const registry = new BlockRegistry(node.libp2p, {})
+    const registry = new BlockRegistry(node.libp2p, model.repoId ?? 'unknown', {})
     await registry.start()
 
-    await registerInferenceHandler(node.libp2p, async (input, nTokens) => {
-      return runner.forward(input, nTokens)
-    })
-    await registerInferenceHandlerV2(node.libp2p, async (input, nTokens) => {
+    await registerInferenceHandlerV3(node.libp2p, async (input, nTokens) => {
       return runner.forward(input, nTokens)
     }, getNodeIdentity())
 
@@ -239,6 +237,9 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
     if (!activeHost) throw new Error('No blocks hosted — start hosting first')
 
+    const requestId = randomUUID()
+    console.log(`[OpenCoral] Starting inference ${requestId}: "${prompt.slice(0, 50)}..."`)
+
     // Build or reuse tokenizer from GGUF metadata
     if (!cachedTokenizer) {
       const header = getCurrentGGUFHeader()
@@ -254,6 +255,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       hiddenSize: model.hiddenSize,
       getPeerBlockRange,
       latencyTracker: getLatencyTracker(),
+      identity: getNodeIdentity(),
+      repoId: model.repoId,
     })
 
     const chain = await mgr.planChainWithCandidates()
@@ -265,7 +268,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
     // Tokenize prompt with chat template
     const promptIds = tokenizer.encodeChat(prompt)
-    console.log(`[OpenCoral] Prompt tokens (${promptIds.length}):`, Array.from(promptIds).slice(0, 30))
+    console.log(`[OpenCoral] [${requestId}] Prompt tokens (${promptIds.length})`)
 
     const vocabSize = activeHost.runner.vocabSize
 
@@ -273,36 +276,43 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       return `${s.candidates[0].peerId}:${s.blockStart}-${s.blockEnd}`
     }
 
-    // Assign a KV session UUID for each remote chain step
-    const remoteSessionIds = new Map<string, string>()
+    // Open persistent KV sessions with all remote peers
+    const kvClients = new Map<string, KVSessionClient>()
     const remoteSteps = chain.filter(s => s.candidates[0].peerId !== 'local')
-
-    // Open KV sessions with all remote peers before prefill
     for (const step of remoteSteps) {
-      const sessionUUID = randomUUID()
-      remoteSessionIds.set(stepKey(step), sessionUUID)
       const peerId = peerIdFromString(step.candidates[0].peerId)
-      await openRemoteSession(node.libp2p, peerId, sessionUUID, promptIds.length + maxTokens)
+      const client = await KVSessionClient.open(
+        node.libp2p, peerId, randomUUID(), promptIds.length + maxTokens,
+      )
+      kvClients.set(stepKey(step), client)
     }
 
     // Open a local KV cache session
     const sessionId = await activeHost.runner.openSession(promptIds.length + maxTokens)
 
     try {
-      // ── Prefill: process full prompt ──────────────────────────────────────
+      // ── Prefill with pipeline scheduler ───────────────────────────────────
       let current: Float32Array = await activeHost.runner.embedTokens(promptIds)
 
-      for (const chainStep of chain) {
-        const stepT0 = Date.now()
-        if (chainStep.candidates[0].peerId === 'local') {
-          current = await activeHost.runner.sessionForward(sessionId, current, promptIds.length)
-        } else {
-          const peerId = peerIdFromString(chainStep.candidates[0].peerId)
-          const sessionUUID = remoteSessionIds.get(stepKey(chainStep))!
-          current = await forwardRemote(node.libp2p, peerId, sessionUUID, current, promptIds.length, nEmbd)
-        }
-        stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
-      }
+      const scheduler = new PipelineScheduler({
+        chain,
+        nEmbd,
+        microBatchSize: 128,
+        executeStep: async (chainStep, input, nTokens) => {
+          const stepT0 = Date.now()
+          let result: Float32Array
+          if (chainStep.candidates[0].peerId === 'local') {
+            result = await activeHost!.runner.sessionForward(sessionId, input, nTokens)
+          } else {
+            const client = kvClients.get(stepKey(chainStep))!
+            result = await client.forward(input, nTokens, nEmbd, requestId)
+          }
+          stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
+          return result
+        },
+      })
+
+      current = await scheduler.prefill(current, promptIds.length)
 
       // Project only the last token's hidden state to logits
       const lastHidden = current.subarray((promptIds.length - 1) * nEmbd, promptIds.length * nEmbd)
@@ -316,7 +326,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
         generatedIds.push(nextToken)
         if (step < 5) {
-          console.log(`[OpenCoral] Step ${step}: token=${nextToken} text="${tokenizer.decodeToken(nextToken)}"`)
+          console.log(`[OpenCoral] [${requestId}] Step ${step}: token=${nextToken} text="${tokenizer.decodeToken(nextToken)}"`)
         }
 
         // Embed single new token
@@ -328,9 +338,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
           if (chainStep.candidates[0].peerId === 'local') {
             current = await activeHost.runner.sessionForward(sessionId, current, 1)
           } else {
-            const peerId = peerIdFromString(chainStep.candidates[0].peerId)
-            const sessionUUID = remoteSessionIds.get(stepKey(chainStep))!
-            current = await forwardRemote(node.libp2p, peerId, sessionUUID, current, 1, nEmbd)
+            const client = kvClients.get(stepKey(chainStep))!
+            current = await client.forward(current, 1, nEmbd, requestId)
           }
           stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
         }
@@ -342,12 +351,9 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       await activeHost.runner.closeSession(sessionId)
 
       // Close remote KV sessions best-effort; host-side timeout handles dropout
-      for (const step of remoteSteps) {
-        const sessionUUID = remoteSessionIds.get(stepKey(step))
-        if (!sessionUUID) continue
-        const peerId = peerIdFromString(step.candidates[0].peerId)
-        closeRemoteSession(node.libp2p, peerId, sessionUUID).catch(err => {
-          console.warn(`[OpenCoral] Failed to close remote KV session for ${step.candidates[0].peerId}:`, err)
+      for (const [key, client] of kvClients) {
+        client.close().catch(err => {
+          console.warn(`[OpenCoral] [${requestId}] Failed to close KV session ${key}:`, err)
         })
       }
     }
@@ -396,9 +402,13 @@ export function setupCoverageIPC(getNode: () => OpenCoralNode | null): void {
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
       getPeerBlockRange,
+      identity: getNodeIdentity(),
+      repoId: model.repoId,
     })
 
-    return mgr.checkCoverage()
+    const report = await mgr.checkCoverage()
+    const suggestion = suggestBlockRange(report)
+    return { ...report, suggestion: suggestion ?? undefined }
   })
 }
 

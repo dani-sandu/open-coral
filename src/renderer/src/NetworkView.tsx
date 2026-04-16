@@ -7,6 +7,8 @@ interface BlockRange {
 
 interface NetworkPeer {
   peerId: string
+  displayName?: string
+  peerType: 'local' | 'remote' | 'discovery'
   multiaddrs: string[]
   blockRanges: BlockRange[]
   isLocal: boolean
@@ -60,9 +62,10 @@ function shortPeerId(id: string): string {
   return id.slice(0, 6) + '…' + id.slice(-4)
 }
 
-function peerColor(index: number, isLocal: boolean): string {
-  if (isLocal) return COLORS.accent
-  const palette = [COLORS.blue, COLORS.teal, COLORS.peach, COLORS.yellow, COLORS.green, COLORS.red]
+function peerColor(index: number, peer: { isLocal: boolean; peerType?: string }): string {
+  if (peer.isLocal) return COLORS.accent
+  if (peer.peerType === 'discovery') return COLORS.yellow
+  const palette = [COLORS.blue, COLORS.teal, COLORS.peach, COLORS.green, COLORS.red]
   return palette[index % palette.length]
 }
 
@@ -86,7 +89,7 @@ function layoutPeers(peers: NetworkPeer[]): { peer: NetworkPeer; x: number; y: n
       peer,
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
-      color: peerColor(i + 1, false),
+      color: peerColor(i + 1, peer),
     })
   })
 
@@ -139,7 +142,7 @@ function PeerNode({
         fontFamily="monospace"
         fill={isHovered ? COLORS.text : COLORS.textDim}
       >
-        {peer.isLocal ? 'LOCAL' : shortPeerId(peer.peerId)}
+        {peer.isLocal ? 'LOCAL' : peer.displayName ?? shortPeerId(peer.peerId)}
       </text>
       {/* block ranges */}
       {peer.blockRanges.length > 0 && (
@@ -218,7 +221,7 @@ function PeerDetailPanel({ peer, color }: { peer: NetworkPeer; color: string }):
       minWidth: 220,
     }}>
       <div style={{ marginBottom: 8, fontWeight: 600, color }}>
-        {peer.isLocal ? '⬢ Local Node' : '⬡ Remote Peer'}
+        {peer.peerType === 'local' ? '⬢ Local Node' : peer.peerType === 'discovery' ? '⬡ Coral Network Peer' : '⬡ Remote Peer'}
       </div>
       <div style={{ marginBottom: 4 }}>
         <span style={{ color: COLORS.textDim }}>Peer ID: </span>
@@ -440,7 +443,7 @@ export default function NetworkView(): React.JSX.Element {
             </thead>
             <tbody>
               {state.peers.map((peer, i) => {
-                const color = peer.isLocal ? COLORS.accent : peerColor(i, false)
+                const color = peerColor(i, peer)
                 return (
                   <tr
                     key={peer.peerId}
@@ -451,8 +454,8 @@ export default function NetworkView(): React.JSX.Element {
                     onMouseEnter={() => setHoveredPeer(peer.peerId)}
                     onMouseLeave={() => setHoveredPeer(null)}
                   >
-                    <td style={{ padding: '6px 8px', color }}>{shortPeerId(peer.peerId)}</td>
-                    <td style={{ padding: '6px 8px' }}>{peer.isLocal ? 'local' : 'remote'}</td>
+                    <td style={{ padding: '6px 8px', color }}>{peer.displayName ?? shortPeerId(peer.peerId)}</td>
+                    <td style={{ padding: '6px 8px' }}>{peer.peerType}</td>
                     <td style={{ padding: '6px 8px' }}>
                       {peer.modelInfo
                         ? <span style={{ color: COLORS.text }}>

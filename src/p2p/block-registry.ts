@@ -1,5 +1,5 @@
 import type { Libp2p } from 'libp2p'
-import { announcePresence } from './dht'
+import { announcePresence, announceModel } from './dht'
 
 const DEFAULT_REANNOUNCE_INTERVAL_MS = 10 * 60 * 1000  // 10 minutes
 
@@ -8,6 +8,8 @@ export interface BlockRegistryOptions {
   reannounceIntervalMs?: number
   /** Override announcePresence for testing. */
   announcePresence?: (libp2p: Libp2p) => Promise<void>
+  /** Override announceModel for testing. */
+  announceModel?: (libp2p: Libp2p, repoId: string) => Promise<void>
 }
 
 /**
@@ -16,23 +18,30 @@ export interface BlockRegistryOptions {
  */
 export class BlockRegistry {
   private readonly libp2p: Libp2p
+  private readonly repoId: string
   private readonly intervalMs: number
   private readonly announce: (libp2p: Libp2p) => Promise<void>
+  private readonly announceModelFn: (libp2p: Libp2p, repoId: string) => Promise<void>
   private timer: ReturnType<typeof setInterval> | null = null
 
-  constructor(libp2p: Libp2p, opts: BlockRegistryOptions) {
+  constructor(libp2p: Libp2p, repoId: string, opts: BlockRegistryOptions) {
     this.libp2p = libp2p
+    this.repoId = repoId
     this.intervalMs = opts.reannounceIntervalMs ?? DEFAULT_REANNOUNCE_INTERVAL_MS
     this.announce = opts.announcePresence ?? announcePresence
+    this.announceModelFn = opts.announceModel ?? announceModel
   }
 
   /** Announce immediately, then start periodic re-announcement. */
   async start(): Promise<void> {
     if (this.timer !== null) return  // already started
     await this.announce(this.libp2p)
+    await this.announceModelFn(this.libp2p, this.repoId)
     this.timer = setInterval(() => {
-      // Fire-and-forget re-announcement; errors are non-fatal
-      this.announce(this.libp2p).catch(err => {
+      Promise.all([
+        this.announce(this.libp2p),
+        this.announceModelFn(this.libp2p, this.repoId),
+      ]).catch(err => {
         console.error('[BlockRegistry] re-announce failed:', err)
       })
     }, this.intervalMs)

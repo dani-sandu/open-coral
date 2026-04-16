@@ -9,6 +9,7 @@ import { generateKeyPair, privateKeyToProtobuf, privateKeyFromProtobuf } from '@
 import { CID } from 'multiformats/cid'
 import { sha256 } from 'multiformats/hashes/sha2'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { TrustedKeyStore, registerKeyRegistryHandler } from '../src/p2p/key-registry'
 
 // ── Identity persistence ─────────────────────────────────────────────────────
 
@@ -87,6 +88,11 @@ async function main() {
   for (const ma of multiaddrs) {
     console.log(`[bootstrap] Listening: ${ma}`)
   }
+
+  // Register key registry handler so peers can register/lookup Ed25519 public keys
+  const keyStore = new TrustedKeyStore()
+  await registerKeyRegistryHandler(node, keyStore)
+  console.log(`[bootstrap] Key registry handler registered`)
 
   // Announce presence immediately, then every 10 minutes
   await announcePresence(node)
