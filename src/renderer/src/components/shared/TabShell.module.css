@@ -1,0 +1,48 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+}
+.title {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--sp-sm);
+}
+.titleIcon {
+  color: var(--accent);
+  margin-right: 6px;
+}
+.strip {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-sm) 0;
+  margin-bottom: var(--sp-md);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-md);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  gap: var(--sp-lg);
+}
+.stripStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  flex: 1;
+}
+.stripActions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin-left: auto;
+}
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}

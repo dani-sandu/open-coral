@@ -1,0 +1,89 @@
+.btn {
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-sm);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btnPrimary {
+  composes: btn;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: var(--fs-lg);
+}
+.btnSecondary {
+  composes: btn;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  font-size: var(--fs-sm);
+}
+.btnDanger {
+  composes: btn;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid color-mix(in srgb, var(--red) 27%, transparent);
+  padding: 8px 18px;
+  font-size: var(--fs-md);
+}
+.btnIcon {
+  composes: btn;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  line-height: 20px;
+  padding: 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 14px;
+}
+.badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+.input {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: var(--fs-md);
+  outline: none;
+  font-family: var(--font-ui);
+}
+.inputNumber {
+  composes: input;
+  width: 60px;
+  text-align: center;
+  border-radius: var(--radius-md);
+}
+.error {
+  color: var(--red);
+  font-size: var(--fs-md);
+  margin-bottom: var(--sp-md);
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+  border-radius: var(--radius-md);
+}

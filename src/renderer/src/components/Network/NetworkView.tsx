@@ -1,4 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import TabShell from '../shared/TabShell'
+import BlockRangeTag from '../Block/BlockRangeTag'
+import StatusDot from '../shared/StatusDot'
+import cmp from '../shared/components.module.css'
+import styles from './NetworkView.module.css'
+
+// ── Interfaces ─────────────────────────────────────────────────────────────────
 
 interface BlockRange {
   start: number
@@ -37,25 +44,29 @@ interface NetworkState {
   timestamp: number
 }
 
-const COLORS = {
-  bg: '#1e1e2e',
+// ── SVG colour palette ─────────────────────────────────────────────────────────
+// SVG attributes (stroke/fill) do not support CSS variables, so a local map is
+// used for the SVG-specific parts only. Everything else uses CSS variables.
+
+const SVG_COLORS = {
   surface: '#181825',
   border: '#313244',
-  text: '#cdd6f4',
-  textDim: '#6c7086',
   accent: '#7c6af7',
-  accentDim: '#45396e',
+  text: '#cdd6f4',
+  dim: '#6c7086',
+  connection: '#585b70',
   green: '#a6e3a1',
   yellow: '#f9e2af',
   red: '#f38ba8',
   blue: '#89b4fa',
   teal: '#94e2d5',
   peach: '#fab387',
-  connection: '#585b70',
 }
 
 const SVG_WIDTH = 800
 const SVG_HEIGHT = 500
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function shortPeerId(id: string): string {
   if (id.length <= 12) return id
@@ -63,9 +74,9 @@ function shortPeerId(id: string): string {
 }
 
 function peerColor(index: number, peer: { isLocal: boolean; peerType?: string }): string {
-  if (peer.isLocal) return COLORS.accent
-  if (peer.peerType === 'discovery') return COLORS.yellow
-  const palette = [COLORS.blue, COLORS.teal, COLORS.peach, COLORS.green, COLORS.red]
+  if (peer.isLocal) return SVG_COLORS.accent
+  if (peer.peerType === 'discovery') return SVG_COLORS.yellow
+  const palette = [SVG_COLORS.blue, SVG_COLORS.teal, SVG_COLORS.peach, SVG_COLORS.green, SVG_COLORS.red]
   return palette[index % palette.length]
 }
 
@@ -80,7 +91,7 @@ function layoutPeers(peers: NetworkPeer[]): { peer: NetworkPeer; x: number; y: n
   const laid: { peer: NetworkPeer; x: number; y: number; color: string }[] = []
 
   if (localPeer) {
-    laid.push({ peer: localPeer, x: cx, y: cy, color: COLORS.accent })
+    laid.push({ peer: localPeer, x: cx, y: cy, color: SVG_COLORS.accent })
   }
 
   remotePeers.forEach((peer, i) => {
@@ -96,23 +107,7 @@ function layoutPeers(peers: NetworkPeer[]): { peer: NetworkPeer; x: number; y: n
   return laid
 }
 
-function BlockRangeTag({ range, color }: { range: BlockRange; color: string }): React.JSX.Element {
-  return (
-    <span style={{
-      display: 'inline-block',
-      padding: '1px 6px',
-      borderRadius: 4,
-      fontSize: 10,
-      fontFamily: 'monospace',
-      background: color + '22',
-      color: color,
-      border: `1px solid ${color}44`,
-      marginRight: 3,
-    }}>
-      blk {range.start}–{range.end}
-    </span>
-  )
-}
+// ── SVG sub-components ────────────────────────────────────────────────────────
 
 function PeerNode({
   x, y, peer, color, isHovered, onHover,
@@ -131,7 +126,7 @@ function PeerNode({
         <circle cx={x} cy={y} r={r + 8} fill={color} opacity={0.12} />
       )}
       {/* ring */}
-      <circle cx={x} cy={y} r={r} fill={COLORS.surface} stroke={color} strokeWidth={peer.isLocal ? 3 : 2} />
+      <circle cx={x} cy={y} r={r} fill={SVG_COLORS.surface} stroke={color} strokeWidth={peer.isLocal ? 3 : 2} />
       {/* inner dot */}
       <circle cx={x} cy={y} r={5} fill={color} opacity={0.8} />
       {/* label */}
@@ -140,7 +135,7 @@ function PeerNode({
         textAnchor="middle"
         fontSize={11}
         fontFamily="monospace"
-        fill={isHovered ? COLORS.text : COLORS.textDim}
+        fill={isHovered ? SVG_COLORS.text : SVG_COLORS.dim}
       >
         {peer.isLocal ? 'LOCAL' : peer.displayName ?? shortPeerId(peer.peerId)}
       </text>
@@ -154,7 +149,7 @@ function PeerNode({
           fill={color}
           opacity={0.8}
         >
-          {peer.blockRanges.map(r => `[${r.start}–${r.end}]`).join(' ')}
+          {peer.blockRanges.map(br => `[${br.start}–${br.end}]`).join(' ')}
         </text>
       )}
     </g>
@@ -169,7 +164,7 @@ function ConnectionLine({
   return (
     <line
       x1={x1} y1={y1} x2={x2} y2={y2}
-      stroke={highlighted ? COLORS.accent : COLORS.connection}
+      stroke={highlighted ? SVG_COLORS.accent : SVG_COLORS.connection}
       strokeWidth={highlighted ? 2 : 1}
       strokeDasharray={highlighted ? 'none' : '4 4'}
       opacity={highlighted ? 0.8 : 0.4}
@@ -177,94 +172,56 @@ function ConnectionLine({
   )
 }
 
-function StatusBar({ state }: { state: NetworkState | null }): React.JSX.Element {
-  if (!state) {
-    return (
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '8px 0' }}>
-        <span style={{ color: COLORS.red, fontSize: 12 }}>● Node offline</span>
-      </div>
-    )
-  }
-
-  const remotePeers = state.peers.filter(p => !p.isLocal)
-  return (
-    <div style={{
-      display: 'flex', gap: 20, alignItems: 'center', padding: '8px 0',
-      fontSize: 12, color: COLORS.textDim, fontFamily: 'monospace',
-    }}>
-      <span style={{ color: COLORS.green }}>● Online</span>
-      <span>Peer ID: <span style={{ color: COLORS.text }}>{shortPeerId(state.localPeerId)}</span></span>
-      <span>Peers: <span style={{ color: COLORS.text }}>{remotePeers.length}</span></span>
-      <span>Connections: <span style={{ color: COLORS.text }}>{state.connections.length}</span></span>
-      {state.localBlocks.length > 0 && (
-        <span>
-          Blocks:{' '}
-          {state.localBlocks.map((b, i) => (
-            <BlockRangeTag key={i} range={b} color={COLORS.accent} />
-          ))}
-        </span>
-      )}
-    </div>
-  )
-}
+// ── Detail panel ──────────────────────────────────────────────────────────────
 
 function PeerDetailPanel({ peer, color }: { peer: NetworkPeer; color: string }): React.JSX.Element {
   return (
-    <div style={{
-      background: COLORS.surface,
-      border: `1px solid ${COLORS.border}`,
-      borderRadius: 8,
-      padding: 14,
-      fontSize: 12,
-      fontFamily: 'monospace',
-      color: COLORS.text,
-      minWidth: 220,
-    }}>
-      <div style={{ marginBottom: 8, fontWeight: 600, color }}>
+    <div className={styles.detailPanel}>
+      <div className={styles.detailPanelTitle} style={{ color }}>
         {peer.peerType === 'local' ? '⬢ Local Node' : peer.peerType === 'discovery' ? 'Coral Network' : 'Remote Peer'}
       </div>
-      <div style={{ marginBottom: 4 }}>
-        <span style={{ color: COLORS.textDim }}>Peer ID: </span>
-        <span style={{ fontSize: 10, wordBreak: 'break-all' }}>{peer.peerId}</span>
+      <div className={styles.detailRow}>
+        <span style={{ color: 'var(--dim)' }}>Peer ID: </span>
+        <span style={{ fontSize: 'var(--fs-xs)', wordBreak: 'break-all' }}>{peer.peerId}</span>
       </div>
-      <div style={{ marginBottom: 4 }}>
-        <span style={{ color: COLORS.textDim }}>Addrs: </span>
+      <div className={styles.detailRow}>
+        <span style={{ color: 'var(--dim)' }}>Addrs: </span>
         {peer.multiaddrs.length === 0
-          ? <span style={{ color: COLORS.textDim }}>none</span>
+          ? <span style={{ color: 'var(--dim)' }}>none</span>
           : peer.multiaddrs.map((a, i) => (
-              <div key={i} style={{ fontSize: 10, paddingLeft: 8, color: COLORS.textDim }}>{a}</div>
+              <div key={i} className={styles.detailRowIndent}>{a}</div>
             ))
         }
       </div>
       {peer.blockRanges.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          <span style={{ color: COLORS.textDim }}>Blocks: </span>
-          {peer.blockRanges.map((r, i) => (
-            <BlockRangeTag key={i} range={r} color={color} />
+        <div className={styles.detailRow} style={{ marginTop: 6 }}>
+          <span style={{ color: 'var(--dim)' }}>Blocks: </span>
+          {peer.blockRanges.map((br, i) => (
+            <BlockRangeTag key={i} start={br.start} end={br.end} color={color} />
           ))}
         </div>
       )}
       {peer.modelInfo && (
-        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${COLORS.border}` }}>
-          <div style={{ marginBottom: 3 }}>
-            <span style={{ color: COLORS.textDim }}>Model: </span>
-            <span style={{ color: COLORS.text, fontSize: 11 }}>
+        <div className={styles.detailModelSection}>
+          <div className={styles.detailModelRow}>
+            <span style={{ color: 'var(--dim)' }}>Model: </span>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>
               {peer.modelInfo.hfFilename.endsWith('.gguf')
                 ? peer.modelInfo.hfFilename.slice(0, -5)
                 : peer.modelInfo.hfFilename}
             </span>
           </div>
-          <div style={{ marginBottom: 3 }}>
-            <span style={{ color: COLORS.textDim }}>Repo: </span>
-            <span style={{ color: COLORS.textDim, fontSize: 10 }}>{peer.modelInfo.repoId}</span>
+          <div className={styles.detailModelRow}>
+            <span style={{ color: 'var(--dim)' }}>Repo: </span>
+            <span style={{ color: 'var(--dim)', fontSize: 'var(--fs-xs)' }}>{peer.modelInfo.repoId}</span>
           </div>
-          <div style={{ marginBottom: 3 }}>
-            <span style={{ color: COLORS.textDim }}>Arch: </span>
-            <span style={{ color: COLORS.text, fontSize: 11 }}>{peer.modelInfo.architecture}</span>
+          <div className={styles.detailModelRow}>
+            <span style={{ color: 'var(--dim)' }}>Arch: </span>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>{peer.modelInfo.architecture}</span>
           </div>
           <div>
-            <span style={{ color: COLORS.textDim }}>Coverage: </span>
-            <span style={{ color: color, fontSize: 11 }}>
+            <span style={{ color: 'var(--dim)' }}>Coverage: </span>
+            <span style={{ color, fontSize: 'var(--fs-sm)' }}>
               {peer.modelInfo.blockEnd - peer.modelInfo.blockStart + 1}/{peer.modelInfo.totalBlocks} blocks
             </span>
           </div>
@@ -273,6 +230,8 @@ function PeerDetailPanel({ peer, color }: { peer: NetworkPeer; color: string }):
     </div>
   )
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function NetworkView(): React.JSX.Element {
   const [state, setState] = useState<NetworkState | null>(null)
@@ -299,75 +258,66 @@ export default function NetworkView(): React.JSX.Element {
 
   const laidOut = state ? layoutPeers(state.peers) : []
   const peerMap = new Map(laidOut.map(l => [l.peer.peerId, l]))
-
   const hoveredPeerData = hoveredPeer ? laidOut.find(l => l.peer.peerId === hoveredPeer) : null
 
+  // ── TabShell status strip ──────────────────────────────────────────────────
+
+  const statusContent = !state
+    ? <StatusDot color="red" label="Node offline" />
+    : (
+      <>
+        <StatusDot color="green" label="Online" />
+        <span>
+          Peer ID: <span style={{ color: 'var(--text)' }}>{shortPeerId(state.localPeerId)}</span>
+        </span>
+        <span>
+          Peers: <span style={{ color: 'var(--text)' }}>{state.peers.filter(p => !p.isLocal).length}</span>
+        </span>
+        <span>
+          Connections: <span style={{ color: 'var(--text)' }}>{state.connections.length}</span>
+        </span>
+        {state.localBlocks.length > 0 && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            Blocks:{' '}
+            {state.localBlocks.map((b, i) => (
+              <BlockRangeTag key={i} start={b.start} end={b.end} color="var(--accent)" />
+            ))}
+          </span>
+        )}
+      </>
+    )
+
+  const actionsContent = (
+    <>
+      <button className={cmp.btnSecondary} onClick={refresh}>
+        &#x21BB; Refresh
+      </button>
+      <button
+        className={`${cmp.btnSecondary}${autoRefresh ? ` ${styles.btnLive}` : ''}`}
+        onClick={() => setAutoRefresh(v => !v)}
+      >
+        {autoRefresh ? '● Live' : '○ Paused'}
+      </button>
+    </>
+  )
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{
-      background: COLORS.bg,
-      borderRadius: 12,
-      border: `1px solid ${COLORS.border}`,
-      padding: 20,
-      fontFamily: 'system-ui',
-      display: 'flex',
-      flexDirection: 'column',
-      flex: 1,
-      minHeight: 0,
-      overflow: 'hidden',
-    }}>
-      {/* Title bar */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: 12,
-      }}>
-        <h2 style={{ margin: 0, fontSize: 16, color: COLORS.text, fontWeight: 600 }}>
-         Network View
-        </h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={refresh}
-            style={{
-              background: COLORS.surface, color: COLORS.textDim, border: `1px solid ${COLORS.border}`,
-              borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-            }}
-          >
-            ↻ Refresh
-          </button>
-          <button
-            onClick={() => setAutoRefresh(v => !v)}
-            style={{
-              background: autoRefresh ? COLORS.accentDim : COLORS.surface,
-              color: autoRefresh ? COLORS.accent : COLORS.textDim,
-              border: `1px solid ${autoRefresh ? COLORS.accent + '44' : COLORS.border}`,
-              borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-            }}
-          >
-            {autoRefresh ? '● Live' : '○ Paused'}
-          </button>
-        </div>
-      </div>
+    <TabShell title="Network View" status={statusContent} actions={actionsContent}>
 
-      <StatusBar state={state} />
+      {error && <div className={styles.error}>{error}</div>}
 
-      {error && (
-        <div style={{ color: COLORS.red, fontSize: 12, marginBottom: 8 }}>{error}</div>
-      )}
-
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        {/* SVG graph */}
+      {/* SVG graph */}
+      <div className={styles.graphWrapper}>
         <svg
           viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-          style={{
-            width: '100%',
-            background: COLORS.surface,
-            borderRadius: 8,
-            border: `1px solid ${COLORS.border}`,
-          }}
+          className={styles.svgGraph}
         >
           {/* Grid dots */}
           <defs>
             <pattern id="grid-dots" width="30" height="30" patternUnits="userSpaceOnUse">
-              <circle cx="15" cy="15" r="0.8" fill={COLORS.border} />
+              <circle cx="15" cy="15" r="0.8" fill={SVG_COLORS.border} />
             </pattern>
           </defs>
           <rect width={SVG_WIDTH} height={SVG_HEIGHT} fill="url(#grid-dots)" rx="8" />
@@ -406,7 +356,7 @@ export default function NetworkView(): React.JSX.Element {
               x={SVG_WIDTH / 2} y={SVG_HEIGHT - 30}
               textAnchor="middle"
               fontSize={12}
-              fill={COLORS.textDim}
+              fill={SVG_COLORS.dim}
               fontFamily="system-ui"
             >
               {state ? 'No remote peers connected — connect a peer to see the network' : 'Starting P2P node…'}
@@ -416,29 +366,24 @@ export default function NetworkView(): React.JSX.Element {
 
         {/* Detail panel — absolutely positioned so SVG doesn't resize */}
         {hoveredPeerData && (
-          <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
-            <PeerDetailPanel peer={hoveredPeerData.peer} color={hoveredPeerData.color} />
-          </div>
+          <PeerDetailPanel peer={hoveredPeerData.peer} color={hoveredPeerData.color} />
         )}
       </div>
 
       {/* Peer table */}
       {state && state.peers.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ fontSize: 13, color: COLORS.textDim, margin: '0 0 8px', fontWeight: 500 }}>
+        <div className={styles.tableSection}>
+          <h3 className={styles.tableHeading}>
             Connected Peers ({state.peers.length})
           </h3>
-          <table style={{
-            width: '100%', borderCollapse: 'collapse', fontSize: 11,
-            fontFamily: 'monospace', color: COLORS.text,
-          }}>
+          <table className={styles.peerTable}>
             <thead>
-              <tr style={{ borderBottom: `1px solid ${COLORS.border}`, color: COLORS.textDim }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Peer ID</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Type</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Model</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Blocks</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Address</th>
+              <tr>
+                <th>Peer ID</th>
+                <th>Type</th>
+                <th>Model</th>
+                <th>Blocks</th>
+                <th>Address</th>
               </tr>
             </thead>
             <tbody>
@@ -447,34 +392,31 @@ export default function NetworkView(): React.JSX.Element {
                 return (
                   <tr
                     key={peer.peerId}
-                    style={{
-                      borderBottom: `1px solid ${COLORS.border}`,
-                      background: hoveredPeer === peer.peerId ? COLORS.surface : 'transparent',
-                    }}
+                    className={`${styles.peerRow}${hoveredPeer === peer.peerId ? ` ${styles.peerRowHovered}` : ''}`}
                     onMouseEnter={() => setHoveredPeer(peer.peerId)}
                     onMouseLeave={() => setHoveredPeer(null)}
                   >
-                    <td style={{ padding: '6px 8px', color }}>{peer.displayName ?? shortPeerId(peer.peerId)}</td>
-                    <td style={{ padding: '6px 8px' }}>{peer.peerType}</td>
-                    <td style={{ padding: '6px 8px' }}>
+                    <td style={{ color }}>{peer.displayName ?? shortPeerId(peer.peerId)}</td>
+                    <td>{peer.peerType}</td>
+                    <td>
                       {peer.modelInfo
-                        ? <span style={{ color: COLORS.text }}>
+                        ? <span>
                             {peer.modelInfo.hfFilename.endsWith('.gguf')
                               ? peer.modelInfo.hfFilename.slice(0, -5)
                               : peer.modelInfo.hfFilename}
                           </span>
-                        : <span style={{ color: COLORS.textDim }}>—</span>
+                        : <span style={{ color: 'var(--dim)' }}>—</span>
                       }
                     </td>
-                    <td style={{ padding: '6px 8px' }}>
+                    <td>
                       {peer.blockRanges.length > 0
-                        ? peer.blockRanges.map((r, j) => (
-                            <BlockRangeTag key={j} range={r} color={color} />
+                        ? peer.blockRanges.map((br, j) => (
+                            <BlockRangeTag key={j} start={br.start} end={br.end} color={color} />
                           ))
-                        : <span style={{ color: COLORS.textDim }}>—</span>
+                        : <span style={{ color: 'var(--dim)' }}>—</span>
                       }
                     </td>
-                    <td style={{ padding: '6px 8px', color: COLORS.textDim }}>
+                    <td style={{ color: 'var(--dim)' }}>
                       {peer.multiaddrs[0] || '—'}
                     </td>
                   </tr>
@@ -484,6 +426,6 @@ export default function NetworkView(): React.JSX.Element {
           </table>
         </div>
       )}
-    </div>
+    </TabShell>
   )
 }

@@ -1,17 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import type { NetworkModelEntry, ModelInfo } from './types'
-
-const C = {
-  bg: '#1e1e2e',
-  surface: '#181825',
-  border: '#313244',
-  text: '#cdd6f4',
-  dim: '#6c7086',
-  accent: '#7c6af7',
-  green: '#a6e3a1',
-  yellow: '#f9e2af',
-  red: '#f38ba8',
-}
+import type { NetworkModelEntry, ModelInfo } from '../../types'
+import StatusDot from '../shared/StatusDot'
+import cmp from '../shared/components.module.css'
 
 interface ModelSelectorProps {
   currentModel: ModelInfo | null
@@ -22,10 +12,10 @@ function displayName(hfFilename: string): string {
   return hfFilename.endsWith('.gguf') ? hfFilename.slice(0, -5) : hfFilename
 }
 
-function coverageDotColor(entry: NetworkModelEntry): string {
-  if (entry.complete) return C.green
-  if (entry.coveredBlocks > 0) return C.yellow
-  return C.red
+function coverageDotColor(entry: NetworkModelEntry): 'green' | 'yellow' | 'red' {
+  if (entry.complete) return 'green'
+  if (entry.coveredBlocks > 0) return 'yellow'
+  return 'red'
 }
 
 export default function ModelSelector({ currentModel, onModelLoaded }: ModelSelectorProps): React.JSX.Element {
@@ -81,42 +71,33 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
   const entryId = (entry: NetworkModelEntry): string => entry.repoId + '/' + entry.hfFilename
 
   return (
-    <div style={{ fontSize: 12, fontFamily: 'system-ui' }}>
+    <div style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-ui)' }}>
       {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <button
           onClick={() => setExpanded(e => !e)}
           style={{
             background: 'transparent',
-            color: C.text,
+            color: 'var(--text)',
             border: 'none',
             padding: 0,
             cursor: 'pointer',
-            fontSize: 12,
+            fontSize: 'var(--fs-md)',
             display: 'flex',
             alignItems: 'center',
             gap: 5,
           }}
         >
-          <span style={{ color: C.dim, fontSize: 10 }}>{expanded ? '▾' : '▸'}</span>
-          <span style={{ color: C.accent, fontWeight: 600 }}>Network Models</span>
+          <span style={{ color: 'var(--dim)', fontSize: 'var(--fs-xs)' }}>{expanded ? '▾' : '▸'}</span>
+          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Network Models</span>
           {models.length > 0 && (
-            <span style={{ color: C.dim }}>({models.length})</span>
+            <span style={{ color: 'var(--dim)' }}>({models.length})</span>
           )}
         </button>
         <button
           onClick={discover}
           disabled={loading}
-          style={{
-            background: 'transparent',
-            color: C.dim,
-            border: `1px solid ${C.border}`,
-            borderRadius: 4,
-            padding: '2px 8px',
-            fontSize: 10,
-            cursor: loading ? 'default' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-          }}
+          className={cmp.btnSecondary}
         >
           {loading ? '…' : '↻ Refresh'}
         </button>
@@ -126,7 +107,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
       {expanded && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {models.length === 0 && !loading && (
-            <div style={{ color: C.dim, fontSize: 11, padding: '4px 0' }}>
+            <div style={{ color: 'var(--dim)', fontSize: 'var(--fs-sm)', padding: '4px 0' }}>
               No models found on the network. Load a model and start hosting in the Models tab, or connect to peers that are hosting.
             </div>
           )}
@@ -147,28 +128,25 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
                   alignItems: 'center',
                   gap: 8,
                   padding: '5px 8px',
-                  background: active ? C.accent + '15' : C.bg,
-                  border: `1px solid ${active ? C.accent + '44' : C.border}`,
-                  borderRadius: 6,
+                  background: active
+                    ? 'color-mix(in srgb, var(--accent) 8%, transparent)'
+                    : 'var(--bg)',
+                  border: active
+                    ? '1px solid color-mix(in srgb, var(--accent) 27%, transparent)'
+                    : '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)',
                 }}
               >
                 {/* Coverage dot */}
-                <div
-                  title={entry.complete ? 'Full coverage' : entry.coveredBlocks > 0 ? 'Partial coverage' : 'No coverage'}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: dotColor,
-                    flexShrink: 0,
-                  }}
+                <StatusDot
+                  color={dotColor}
                 />
 
                 {/* Model info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      color: active ? C.accent : C.text,
+                      color: active ? 'var(--accent)' : 'var(--text)',
                       fontWeight: active ? 600 : 400,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -178,7 +156,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
                   >
                     {displayName(entry.hfFilename)}
                   </div>
-                  <div style={{ color: C.dim, fontSize: 10, marginTop: 1 }}>
+                  <div style={{ color: 'var(--dim)', fontSize: 'var(--fs-xs)', marginTop: 1 }}>
                     {entry.repoId}
                     {' · '}
                     {coveragePct}% coverage
@@ -189,22 +167,13 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
 
                 {/* Action button */}
                 {active ? (
-                  <span style={{ color: C.green, fontSize: 11, flexShrink: 0 }}>Active</span>
+                  <span style={{ color: 'var(--green)', fontSize: 'var(--fs-sm)', flexShrink: 0 }}>Active</span>
                 ) : (
                   <button
                     onClick={() => handleUse(entry)}
                     disabled={isLoading}
-                    style={{
-                      background: C.accent,
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '3px 10px',
-                      fontSize: 11,
-                      cursor: isLoading ? 'default' : 'pointer',
-                      opacity: isLoading ? 0.6 : 1,
-                      flexShrink: 0,
-                    }}
+                    className={cmp.btnPrimary}
+                    style={{ padding: '3px 10px', fontSize: 'var(--fs-sm)', flexShrink: 0 }}
                   >
                     {isLoading ? '…' : 'Use'}
                   </button>
