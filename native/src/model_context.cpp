@@ -67,10 +67,15 @@ ModelContext* model_context_load(
     int         block_end,
     int         total_blocks
 ) {
-    // Validate parameters
-    if (block_start < 0 || block_end < block_start || total_blocks <= 0 || block_end >= total_blocks) {
+    // Validate parameters — block_end == -1 is a "shim mode" sentinel (no blocks, embed+output only)
+    bool shim_mode = (block_end == -1);
+    if (!shim_mode && (block_start < 0 || block_end < block_start || total_blocks <= 0 || block_end >= total_blocks)) {
         throw std::runtime_error("Invalid block range: block_start=" + std::to_string(block_start) +
             " block_end=" + std::to_string(block_end) + " total_blocks=" + std::to_string(total_blocks));
+    }
+    if (shim_mode && (total_blocks <= 0 || block_start != 0)) {
+        throw std::runtime_error("Shim mode requires block_start=0 and total_blocks>0, got block_start=" +
+            std::to_string(block_start) + " total_blocks=" + std::to_string(total_blocks));
     }
 
     // 1. Read entire GGUF file into memory
@@ -145,10 +150,10 @@ ModelContext* model_context_load(
         if (mc->embd_weight) mc->config.n_vocab = (int32_t)mc->embd_weight->ne[1];
     }
 
-    // 5. Load transformer block tensors
-    int n_layers = block_end - block_start + 1;
+    // 5. Load transformer block tensors (skipped in shim mode)
+    int n_layers = shim_mode ? 0 : (block_end - block_start + 1);
     mc->layers.resize(n_layers);
-    for (int bi = block_start; bi <= block_end; bi++) {
+    for (int bi = block_start; !shim_mode && bi <= block_end; bi++) {
         auto& lw  = mc->layers[bi - block_start];
         auto  pfx = "blk." + std::to_string(bi) + ".";
         auto  B   = [&](const char* suf) {
@@ -169,7 +174,7 @@ ModelContext* model_context_load(
     }
 
     // 6. Load output tensors if we host the last block
-    if (block_end == total_blocks - 1) {
+    if (shim_mode || block_end == total_blocks - 1) {
         mc->output_norm = find_and_bind(wctx, gctx, "output_norm.weight", fb, data_start);
         mc->output_wt   = find_and_bind(wctx, gctx, "output.weight",      fb, data_start);
 

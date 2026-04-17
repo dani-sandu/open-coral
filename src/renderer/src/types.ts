@@ -9,6 +9,8 @@ export interface ModelInfo {
   repoId?: string
   /** HuggingFace filename. Present only for HF downloads. */
   hfFilename?: string
+  /** True when loaded from a shim GGUF (no block tensors) */
+  shimOnly?: boolean
 }
 
 export interface HostingState {
@@ -176,6 +178,7 @@ declare global {
       hfPreviewModel: (repoId: string, filename: string) => Promise<HFModelPreview>
       hfEstimateBlocks: (blockStart: number, blockEnd: number) => Promise<BlockEstimate>
       hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) => Promise<string>
+      hfDownloadShim: (repoId: string, filename: string) => Promise<string>
       discoverNetworkModels: () => Promise<NetworkModelEntry[]>
       loadModelByHFIdentity: (repoId: string, hfFilename: string) => Promise<ModelInfo>
       listLocalModels: () => Promise<LocalModelEntry[]>

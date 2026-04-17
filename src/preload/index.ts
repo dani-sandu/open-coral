@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('opencoral', {
     ipcRenderer.invoke('opencoral:hf-estimate-blocks', blockStart, blockEnd),
   hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) =>
     ipcRenderer.invoke('opencoral:hf-download-partial', repoId, filename, blockStart, blockEnd),
+  hfDownloadShim: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('opencoral:hf-download-shim', repoId, filename),
 
   // Network model discovery
   discoverNetworkModels: () => ipcRenderer.invoke('opencoral:discover-network-models'),

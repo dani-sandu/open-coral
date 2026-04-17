@@ -4,7 +4,7 @@ import { join } from 'path'
 import https from 'https'
 import http from 'http'
 import { parseGGUFHeader } from '../inference/gguf-parser'
-import { countBlocks, extractBlockTensors } from '../inference/block-extractor'
+import { countBlocks, extractBlockTensors, extractShimTensors } from '../inference/block-extractor'
 import { tensorDataSize, tensorByteRanges, buildPartialGGUF, estimatePartialSize } from '../inference/gguf-partial'
 
 // ── HF Hub API types ────────────────────────────────────────────────────────────
@@ -186,6 +186,91 @@ function downloadFile(
 }
 
 // ── IPC handlers ────────────────────────────────────────────────────────────────
+
+/**
+ * Download a shim GGUF containing only embedding + output tensors.
+ * Callable from both IPC handlers and directly from main-process code.
+ */
+export async function downloadShimGGUF(repoId: string, filename: string): Promise<string> {
+  // Fetch header if not already cached
+  if (!cachedHeader || !cachedHeaderBuf) {
+    const sizes = [10 * 1024 * 1024, 30 * 1024 * 1024, 80 * 1024 * 1024]
+    for (const size of sizes) {
+      cachedHeaderBuf = await downloadRange(repoId, filename, 0, size - 1)
+      try {
+        cachedHeader = parseGGUFHeader(cachedHeaderBuf)
+        break
+      } catch (e) {
+        if (size === sizes[sizes.length - 1]) throw e
+      }
+    }
+    if (!cachedHeader || !cachedHeaderBuf) throw new Error('Failed to parse GGUF header')
+  }
+
+  if (activeDownload) {
+    activeDownload.abort()
+    activeDownload = null
+  }
+
+  const header = cachedHeader
+  const headerBuf = cachedHeaderBuf
+
+  const { embeddingTensor, outputTensors } = extractShimTensors(header)
+  const selectedTensors = [
+    ...(embeddingTensor ? [embeddingTensor] : []),
+    ...outputTensors,
+  ]
+
+  if (selectedTensors.length === 0) {
+    throw new Error('No embedding or output tensors found in model')
+  }
+
+  const ranges = tensorByteRanges(header, selectedTensors)
+  const totalDownload = ranges.reduce((s, r) => s + r.size, 0)
+  let downloaded = 0
+  let aborted = false
+
+  const baseName = filename.replace(/\.gguf$/i, '')
+  const shimName = `${baseName}.shim.gguf`
+  const localPath = join(modelsDir(), shimName)
+
+  if (existsSync(localPath)) {
+    try { unlinkSync(localPath) } catch {}
+  }
+
+  lastProgress = { file: shimName, downloadedBytes: 0, totalBytes: totalDownload, percent: 0, done: false }
+
+  const abortController = { abort: () => { aborted = true } }
+  activeDownload = abortController
+
+  try {
+    const tensorDataChunks = new Map<string, Buffer>()
+    for (const range of ranges) {
+      if (aborted) throw new Error('Cancelled')
+      const data = await downloadRange(repoId, filename, range.absoluteOffset, range.absoluteOffset + range.size - 1)
+      tensorDataChunks.set(range.name, data)
+      downloaded += data.length
+      const percent = totalDownload > 0 ? Math.round((downloaded / totalDownload) * 100) : 0
+      lastProgress = { file: shimName, downloadedBytes: downloaded, totalBytes: totalDownload, percent, done: false }
+    }
+
+    if (aborted) throw new Error('Cancelled')
+
+    const partialBuf = buildPartialGGUF(headerBuf, header, selectedTensors, tensorDataChunks)
+    writeFileSync(localPath, partialBuf)
+
+    const meta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null, shim: true }
+    writeFileSync(localPath + '.opencoral-meta.json', JSON.stringify(meta, null, 2), 'utf-8')
+
+    lastProgress = { file: shimName, downloadedBytes: downloaded, totalBytes: totalDownload, percent: 100, done: true, localPath }
+    activeDownload = null
+    return localPath
+  } catch (err) {
+    activeDownload = null
+    try { unlinkSync(localPath) } catch {}
+    throw err
+  }
+}
 
 export function setupHuggingFaceIPC(): void {
   ipcMain.handle('opencoral:hf-search', async (_event, query: string): Promise<HFModelResult[]> => {
@@ -377,6 +462,16 @@ export function setupHuggingFaceIPC(): void {
       try { unlinkSync(localPath) } catch {}
       throw err
     }
+  })
+
+  // ── Shim download: embed + output tensors only (no blocks) ────────────────
+
+  ipcMain.handle('opencoral:hf-download-shim', async (
+    _event,
+    repoId: string,
+    filename: string,
+  ): Promise<string> => {
+    return downloadShimGGUF(repoId, filename)
   })
 }
 

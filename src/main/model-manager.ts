@@ -3,7 +3,9 @@ import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, read
 import { join } from 'path'
 import { parseGGUFHeader } from '../inference/gguf-parser'
 import type { GGUFHeader } from '../inference/types'
-import { countBlocks } from '../inference/block-extractor'
+import { countBlocks, extractShimTensors } from '../inference/block-extractor'
+import { downloadShimGGUF } from './huggingface'
+import { loadShimRunner, disposeShimRunner } from './block-host'
 
 export interface ModelInfo {
   path: string
@@ -18,6 +20,8 @@ export interface ModelInfo {
   repoId?: string
   /** HuggingFace filename, e.g. "Llama-3.2-3B-Instruct-Q4_K_M.gguf". Present only for HF downloads. */
   hfFilename?: string
+  /** True when this model was loaded from a shim GGUF (embed + output tensors only, no blocks) */
+  shimOnly?: boolean
 }
 
 let currentModel: ModelInfo | null = null
@@ -60,11 +64,13 @@ function loadModelInfo(filePath: string): { info: ModelInfo; header: GGUFHeader 
   // Read HuggingFace identity from sidecar if present
   let repoId: string | undefined
   let hfFilename: string | undefined
+  let isShim = false
   const sidecarPath = filePath + '.opencoral-meta.json'
   try {
     const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'))
-    repoId    = typeof sidecar.repoId    === 'string' ? sidecar.repoId    : undefined
+    repoId     = typeof sidecar.repoId    === 'string' ? sidecar.repoId    : undefined
     hfFilename = typeof sidecar.hfFilename === 'string' ? sidecar.hfFilename : undefined
+    isShim     = sidecar.shim === true
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     // ENOENT = no sidecar file — this is a local file with no HF identity
@@ -81,16 +87,34 @@ function loadModelInfo(filePath: string): { info: ModelInfo; header: GGUFHeader 
       blockTensorSuffixes,
       repoId,
       hfFilename,
+      shimOnly: isShim || undefined,
     },
     header,
   }
 }
 
-function loadAndSet(filePath: string, repoId: string, hfFilename: string): ModelInfo {
+async function loadAndSet(filePath: string, repoId: string, hfFilename: string): Promise<ModelInfo> {
   const loaded = loadModelInfo(filePath)
-  currentModel = loaded.info
+  let model = loaded.info
+  if (!model.repoId) model = { ...model, repoId, hfFilename }
+
+  // Ensure a shim runner is available for embed/project.
+  // Check whether the file has the required embed + output tensors.
+  const { embeddingTensor, outputTensors } = extractShimTensors(loaded.header)
+  const hasShimTensors = embeddingTensor !== null && outputTensors.length > 0
+
+  if (hasShimTensors) {
+    // File has embed + output tensors — use it directly as the shim source
+    await loadShimRunner(filePath, model.totalBlocks, model.hiddenSize)
+  } else if (repoId && hfFilename) {
+    // Partial download without embed/output — download a proper shim
+    console.log(`[OpenCoral] File ${filePath} lacks embed/output tensors — downloading shim`)
+    const shimPath = await downloadShimGGUF(repoId, hfFilename)
+    await loadShimRunner(shimPath, model.totalBlocks, model.hiddenSize)
+  }
+
+  currentModel = model
   currentGGUFHeader = loaded.header
-  if (!currentModel.repoId) currentModel = { ...currentModel, repoId, hfFilename }
   return currentModel
 }
 
@@ -103,6 +127,7 @@ export function setupModelIPC(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
 
+    await disposeShimRunner()
     const loaded = loadModelInfo(result.filePaths[0])
     currentModel = loaded.info
     currentGGUFHeader = loaded.header
@@ -110,6 +135,7 @@ export function setupModelIPC(): void {
   })
 
   ipcMain.handle('opencoral:load-model-path', async (_event, filePath: string): Promise<ModelInfo> => {
+    await disposeShimRunner()
     const loaded = loadModelInfo(filePath)
     currentModel = loaded.info
     currentGGUFHeader = loaded.header
@@ -133,7 +159,7 @@ export function setupModelIPC(): void {
     // First, try the exact filename (full download)
     const exact = join(modelsDir, hfFilename)
     if (existsSync(exact)) {
-      return loadAndSet(exact, repoId, hfFilename)
+      return await loadAndSet(exact, repoId, hfFilename)
     }
 
     // Scan for matching .opencoral-meta.json sidecar (covers partial downloads with renamed files)
@@ -146,7 +172,7 @@ export function setupModelIPC(): void {
           // The GGUF file path = sidecar path minus '.opencoral-meta.json'
           const ggufPath = sidecarPath.slice(0, -'.opencoral-meta.json'.length)
           if (existsSync(ggufPath)) {
-            return loadAndSet(ggufPath, repoId, hfFilename)
+            return await loadAndSet(ggufPath, repoId, hfFilename)
           }
         }
       } catch {
@@ -154,7 +180,10 @@ export function setupModelIPC(): void {
       }
     }
 
-    throw new Error(`Model file not found locally: ${hfFilename}`)
+    // No local file found — download a shim GGUF (embed + output tensors only)
+    console.log(`[OpenCoral] No local model for ${repoId}/${hfFilename} — downloading shim`)
+    const shimPath = await downloadShimGGUF(repoId, hfFilename)
+    return await loadAndSet(shimPath, repoId, hfFilename)
   })
 
   ipcMain.handle('opencoral:list-local-models', (): LocalModelEntry[] => {

@@ -6,6 +6,8 @@ import TabShell from '../shared/TabShell'
 import StatusDot from '../shared/StatusDot'
 import styles from './ChatPanel.module.css'
 import cmp from '../shared/components.module.css'
+import { useToast } from '../Toast/ToastProvider'
+import { formatMissingRanges } from '../../utils/format'
 
 function shortId(id: string): string {
   if (id === 'local') return 'local'
@@ -142,6 +144,7 @@ export default function ChatPanel({
   const [activeModel, setActiveModel] = useState<ModelInfo | null>(null)
   const [showModelPicker, setShowModelPicker] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { addToast } = useToast()
 
   const activeSession = sessions.find(s => s.id === activeSessionId) ?? null
 
@@ -208,11 +211,13 @@ export default function ChatPanel({
       }
       onUpdateSession(activeSession.id, { messages: [...newMessages, assistantMsg] })
     } catch (e) {
+      const errorText = e instanceof Error ? e.message : String(e)
+      addToast(errorText, 'error')
       const errMsg: ChatMessage = {
         id: `${Date.now()}-error`,
         role: 'assistant',
         text: 'Inference failed.',
-        error: String(e),
+        error: errorText,
         timestamp: Date.now(),
       }
       onUpdateSession(activeSession.id, { messages: [...newMessages, errMsg] })
@@ -392,7 +397,9 @@ export default function ChatPanel({
 
             {coverage && !coverage.complete && !coverageLoading && (
               <div className={styles.coverageWarning}>
-                Inference requires all transformer blocks to be covered. Host more blocks or connect peers that cover the missing ranges.
+                {coverage.totalBlocks - coverage.missing.length}/{coverage.totalBlocks} blocks covered.
+                {' '}Missing: {formatMissingRanges(coverage.missing)}.
+                {' '}Connect peers that host the missing blocks.
               </div>
             )}
           </div>

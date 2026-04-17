@@ -1,0 +1,72 @@
+.container {
+  position: fixed;
+  top: 48px;
+  right: 12px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 400px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  font-family: var(--font-ui);
+  color: var(--text);
+  pointer-events: auto;
+  animation: slideIn 0.2s ease-out;
+}
+
+.error {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+}
+
+.warning {
+  border-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 8%, var(--surface));
+}
+
+.info {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--surface));
+}
+
+.message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.close {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.close:hover {
+  color: var(--text);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

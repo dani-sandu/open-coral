@@ -48,6 +48,38 @@ interface ActiveHost {
 let activeHost: ActiveHost | null = null
 let cachedTokenizer: Tokenizer | null = null
 
+// ── Shim runner for remote-only inference ────────────────────────────────────
+// Loaded from a shim GGUF (embed + output tensors, no blocks).
+// Used for embedTokens() and projectToLogits() when the user is not hosting blocks.
+let shimRunner: AsyncBlockRunner | null = null
+
+export async function loadShimRunner(shimPath: string, totalBlocks: number, hiddenSize: number): Promise<void> {
+  if (shimRunner) {
+    await shimRunner.dispose()
+    shimRunner = null
+  }
+  cachedTokenizer = null
+  shimRunner = await AsyncBlockRunner.create({
+    modelPath: shimPath,
+    blockStart: 0,
+    blockEnd: -1,  // no blocks — only embed + output tensors
+    totalBlocks,
+    hiddenSize,
+  })
+  console.log(`[OpenCoral] Shim runner loaded from ${shimPath}`)
+}
+
+export async function disposeShimRunner(): Promise<void> {
+  if (shimRunner) {
+    await shimRunner.dispose()
+    shimRunner = null
+  }
+}
+
+export function getShimRunner(): AsyncBlockRunner | null {
+  return shimRunner
+}
+
 /**
  * Sample a token from logits using temperature scaling and top-k filtering.
  * Returns the sampled token index.
@@ -235,7 +267,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const node = getNode()
     if (!node) throw new Error('P2P node not running')
 
-    if (!activeHost) throw new Error('No blocks hosted — start hosting first')
+    if (!activeHost && !shimRunner) throw new Error('No model ready — select a model first')
 
     const requestId = randomUUID()
     console.log(`[OpenCoral] Starting inference ${requestId}: "${prompt.slice(0, 50)}..."`)
@@ -248,9 +280,16 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     }
     const tokenizer = cachedTokenizer
 
+    // Prefer activeHost runner for block computation; fall back to null for shim-only mode
+    const localRunner = activeHost?.runner ?? null
+    // For embed/project: prefer shimRunner (guaranteed to have embed + output tensors).
+    // activeHost.runner may not have them if hosting a partial block range.
+    const embedRunner = shimRunner ?? activeHost?.runner
+    if (!embedRunner) throw new Error('No runner available for embed/project')
+
     const mgr = new SequenceManager({
       node,
-      localRunner: activeHost.runner,
+      localRunner,
       totalBlocks: model.totalBlocks,
       hiddenSize: model.hiddenSize,
       getPeerBlockRange,
@@ -270,7 +309,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const promptIds = tokenizer.encodeChat(prompt)
     console.log(`[OpenCoral] [${requestId}] Prompt tokens (${promptIds.length})`)
 
-    const vocabSize = activeHost.runner.vocabSize
+    const vocabSize = embedRunner.vocabSize
 
     function stepKey(s: ChainStepWithCandidates): string {
       return `${s.candidates[0].peerId}:${s.blockStart}-${s.blockEnd}`
@@ -287,12 +326,14 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       kvClients.set(stepKey(step), client)
     }
 
-    // Open a local KV cache session
-    const sessionId = await activeHost.runner.openSession(promptIds.length + maxTokens)
+    // Only open a local KV session if we're hosting blocks
+    const sessionId = activeHost
+      ? await activeHost.runner.openSession(promptIds.length + maxTokens)
+      : -1
 
     try {
       // ── Prefill with pipeline scheduler ───────────────────────────────────
-      let current: Float32Array = await activeHost.runner.embedTokens(promptIds)
+      let current: Float32Array = await embedRunner.embedTokens(promptIds)
 
       const scheduler = new PipelineScheduler({
         chain,
@@ -302,7 +343,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
           const stepT0 = Date.now()
           let result: Float32Array
           if (chainStep.candidates[0].peerId === 'local') {
-            result = await activeHost!.runner.sessionForward(sessionId, input, nTokens)
+            if (!activeHost) throw new Error('Local chain step but no blocks hosted')
+            result = await activeHost.runner.sessionForward(sessionId, input, nTokens)
           } else {
             const client = kvClients.get(stepKey(chainStep))!
             result = await client.forward(input, nTokens, nEmbd, requestId)
@@ -316,7 +358,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
       // Project only the last token's hidden state to logits
       const lastHidden = current.subarray((promptIds.length - 1) * nEmbd, promptIds.length * nEmbd)
-      let logits = await activeHost.runner.projectToLogits(lastHidden, 1)
+      let logits = await embedRunner.projectToLogits(lastHidden, 1)
       let nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
 
       // ── Decode: one token at a time with KV cache ─────────────────────────
@@ -330,12 +372,13 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
         }
 
         // Embed single new token
-        current = await activeHost.runner.embedTokens(new Int32Array([nextToken]))
+        current = await embedRunner.embedTokens(new Int32Array([nextToken]))
 
         // Forward single token through chain (KV cached on both local and remote)
         for (const chainStep of chain) {
           const stepT0 = Date.now()
           if (chainStep.candidates[0].peerId === 'local') {
+            if (!activeHost) throw new Error('Local chain step but no blocks hosted')
             current = await activeHost.runner.sessionForward(sessionId, current, 1)
           } else {
             const client = kvClients.get(stepKey(chainStep))!
@@ -344,11 +387,13 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
           stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
         }
 
-        logits = await activeHost.runner.projectToLogits(current, 1)
+        logits = await embedRunner.projectToLogits(current, 1)
         nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
       }
     } finally {
-      await activeHost.runner.closeSession(sessionId)
+      if (activeHost && sessionId >= 0) {
+        await activeHost.runner.closeSession(sessionId)
+      }
 
       // Close remote KV sessions best-effort; host-side timeout handles dropout
       for (const [key, client] of kvClients) {
