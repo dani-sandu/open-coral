@@ -77,3 +77,35 @@ export function extractBlockTensors(
 
   return { range, blockTensors, embeddingTensor, outputTensors }
 }
+
+/**
+ * Extract only the embedding and output tensors (no block tensors).
+ * Used to build a "shim" GGUF that can tokenize, embed, and project to logits
+ * without hosting any transformer blocks.
+ */
+export function extractShimTensors(
+  header: GGUFHeader,
+): { embeddingTensor: GGUFTensorInfo | null; outputTensors: GGUFTensorInfo[] } {
+  let embeddingTensor: GGUFTensorInfo | null = null
+  const outputTensors: GGUFTensorInfo[] = []
+
+  for (const tensor of header.tensors) {
+    if (BLOCK_TENSOR_RE.test(tensor.name)) continue
+
+    if (EMBEDDING_TENSORS.has(tensor.name)) {
+      embeddingTensor = tensor
+      continue
+    }
+
+    if (OUTPUT_TENSOR_RE.test(tensor.name)) {
+      outputTensors.push(tensor)
+    }
+  }
+
+  // Weight tying: include embedding as output fallback if no explicit output weights
+  if (outputTensors.length === 0 && embeddingTensor) {
+    outputTensors.push(embeddingTensor)
+  }
+
+  return { embeddingTensor, outputTensors }
+}

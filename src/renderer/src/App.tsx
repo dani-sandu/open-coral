@@ -5,6 +5,7 @@ import ChatPanel from './components/Chat/ChatPanel'
 import type { ChatSession } from './types'
 import './components/shared/theme.css'
 import styles from './App.module.css'
+import ToastProvider from './components/Toast/ToastProvider'
 
 type Tab = 'network' | 'models' | 'chat'
 
@@ -42,7 +43,8 @@ export default function App(): React.JSX.Element {
   }, [])
 
   return (
-    <div className={styles.app}>
+    <ToastProvider>
+      <div className={styles.app}>
       {/* Header */}
       <div className={styles.header}>
         <span className={styles.headerTitle}>OpenCoral</span>
@@ -80,6 +82,7 @@ export default function App(): React.JSX.Element {
           />
         </div>
       </div>
-    </div>
+      </div>
+    </ToastProvider>
   )
 }

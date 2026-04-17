@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import type { NetworkModelEntry, ModelInfo } from '../../types'
 import StatusDot from '../shared/StatusDot'
 import cmp from '../shared/components.module.css'
+import { useToast } from '../Toast/ToastProvider'
 
 interface ModelSelectorProps {
   currentModel: ModelInfo | null
@@ -23,6 +24,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const { addToast } = useToast()
 
   const discover = useCallback(async () => {
     setLoading(true)
@@ -48,11 +50,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
       onModelLoaded(model)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.toLowerCase().includes('not found')) {
-        alert(`Model not found locally. Download it from the Model tab first.`)
-      } else {
-        console.error('loadModelByHFIdentity failed:', e)
-      }
+      addToast(msg, 'error')
     } finally {
       setLoadingId(null)
     }

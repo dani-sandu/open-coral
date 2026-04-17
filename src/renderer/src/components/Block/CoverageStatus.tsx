@@ -3,6 +3,7 @@ import type { CoverageReport } from '../../types'
 import BlockBar from './BlockBar'
 import StatusDot from '../shared/StatusDot'
 import cmp from '../shared/components.module.css'
+import { formatMissingRanges } from '../../utils/format'
 
 interface Props {
   report: CoverageReport | null
@@ -51,7 +52,8 @@ export default function CoverageStatus({ report, loading, onRefresh }: Props): R
             )
             : (
               <span style={{ color: 'var(--dim)' }}>
-                {report.totalBlocks - report.missing.length}/{report.totalBlocks} blocks available
+                {report.totalBlocks - report.missing.length}/{report.totalBlocks} blocks covered
+                {' — '}missing: {formatMissingRanges(report.missing)}
               </span>
             )
           }
