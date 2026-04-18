@@ -1,5 +1,6 @@
 import React from 'react'
-import type { HFFileInfo } from '../../types'
+import type { HFFileInfo, ShardSet } from '../../types'
+import { isShardSet } from '../../../../inference/shard-utils'
 import { fmt } from '../shared/format-utils'
 import cmp from '../shared/components.module.css'
 
@@ -49,12 +50,12 @@ const qualityColor: Record<string, string> = {
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 export interface ModelFilesProps {
-  files: HFFileInfo[]
+  files: (HFFileInfo | ShardSet)[]
   repoId: string
   loading: boolean
   showAll: boolean
   onToggleShowAll: () => void
-  onSelectFile: (file: HFFileInfo) => void
+  onSelectFile: (file: HFFileInfo | ShardSet) => void
   onBack: () => void
 }
 
@@ -82,11 +83,14 @@ export default function ModelFiles({
       )}
 
       {!loading && files.length > 0 && (() => {
-        const recommended = files.find(f => extractQuant(f.rfilename) === RECOMMENDED_QUANT)
+        const recommended = files.find(f => extractQuant(isShardSet(f) ? f.canonical : f.rfilename) === RECOMMENDED_QUANT)
         const keyQuants = new Set(['Q2_K', 'Q4_K_M', 'Q5_K_M', 'Q8_0'])
         const filteredFiles = showAll
           ? files
-          : files.filter(f => { const q = extractQuant(f.rfilename); return q ? keyQuants.has(q) : false })
+          : files.filter(f => {
+              const q = extractQuant(isShardSet(f) ? f.canonical : f.rfilename)
+              return q ? keyQuants.has(q) : false
+            })
         const displayFiles = filteredFiles.length >= 2 ? filteredFiles : files
         const isFiltered = displayFiles.length < files.length
 
@@ -110,7 +114,7 @@ export default function ModelFiles({
                 >
                   <div>
                     <div style={{ color: 'var(--accent)', fontSize: 'var(--fs-lg)', fontWeight: 600, fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
-                      {recommended.rfilename}
+                      {isShardSet(recommended) ? recommended.canonical.replace(/-00001-of-\d+\.gguf$/i, '') : recommended.rfilename}
                     </div>
                     <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--dim)' }}>
                       {QUANT_TABLE[RECOMMENDED_QUANT]?.label ?? 'Best balance of size & quality'}
@@ -118,7 +122,7 @@ export default function ModelFiles({
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                     <div style={{ color: 'var(--text)', fontSize: 'var(--fs-md)' }}>
-                      {recommended.size > 0 ? fmt(recommended.size) : ''}
+                      {(isShardSet(recommended) ? recommended.combinedSize : recommended.size) > 0 ? fmt(isShardSet(recommended) ? recommended.combinedSize : recommended.size) : ''}
                     </div>
                     <div style={{ color: 'var(--accent)', fontSize: 'var(--fs-xs)', marginTop: 2 }}>Select</div>
                   </div>
@@ -131,14 +135,16 @@ export default function ModelFiles({
             </div>
 
             {displayFiles.map(f => {
-              const quant = extractQuant(f.rfilename)
+              const filename = isShardSet(f) ? f.canonical : f.rfilename
+              const size = isShardSet(f) ? f.combinedSize : f.size
+              const quant = extractQuant(filename)
               const info = quant ? getQuantInfo(quant) : null
               const isRecommended = quant === RECOMMENDED_QUANT
               if (!showAll && isRecommended && recommended) return null
 
               return (
                 <button
-                  key={f.rfilename}
+                  key={filename}
                   onClick={() => onSelectFile(f)}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -156,8 +162,17 @@ export default function ModelFiles({
                         color: 'var(--text)', fontSize: 'var(--fs-md)', fontFamily: 'var(--font-mono)',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>
-                        {f.rfilename}
+                        {isShardSet(f) ? f.canonical.replace(/-00001-of-\d+\.gguf$/i, '') : f.rfilename}
                       </span>
+                      {isShardSet(f) && (
+                        <span className={cmp.badge} style={{
+                          background: 'color-mix(in srgb, var(--accent) 9%, transparent)',
+                          color: 'var(--accent)',
+                          border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
+                        }}>
+                          {f.totalShards} shards
+                        </span>
+                      )}
                       {info && (
                         <span className={cmp.badge} style={{
                           background: `color-mix(in srgb, ${qualityColor[info.quality]} 9%, transparent)`,
@@ -171,7 +186,7 @@ export default function ModelFiles({
                     {info && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--dim)' }}>{info.label}</div>}
                   </div>
                   <span style={{ color: 'var(--dim)', fontSize: 'var(--fs-sm)', flexShrink: 0, marginLeft: 12 }}>
-                    {f.size > 0 ? fmt(f.size) : ''}
+                    {size > 0 ? fmt(size) : ''}
                   </span>
                 </button>
               )

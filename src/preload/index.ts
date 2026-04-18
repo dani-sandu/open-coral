@@ -25,14 +25,14 @@ contextBridge.exposeInMainWorld('opencoral', {
   // Hugging Face
   hfSearch: (query: string) => ipcRenderer.invoke('opencoral:hf-search', query),
   hfListFiles: (repoId: string) => ipcRenderer.invoke('opencoral:hf-list-files', repoId),
-  hfDownload: (repoId: string, filename: string) =>
-    ipcRenderer.invoke('opencoral:hf-download', repoId, filename),
+  hfDownload: (repoId: string, filenames: string[]) =>
+    ipcRenderer.invoke('opencoral:hf-download', repoId, filenames),
   hfDownloadProgress: () => ipcRenderer.invoke('opencoral:hf-download-progress'),
   hfCancelDownload: () => ipcRenderer.invoke('opencoral:hf-cancel-download'),
   hfPreviewModel: (repoId: string, filename: string) =>
     ipcRenderer.invoke('opencoral:hf-preview-model', repoId, filename),
-  hfEstimateBlocks: (blockStart: number, blockEnd: number) =>
-    ipcRenderer.invoke('opencoral:hf-estimate-blocks', blockStart, blockEnd),
+  hfEstimateBlocks: (filename: string, blockStart: number, blockEnd: number) =>
+    ipcRenderer.invoke('opencoral:hf-estimate-blocks', filename, blockStart, blockEnd),
   hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) =>
     ipcRenderer.invoke('opencoral:hf-download-partial', repoId, filename, blockStart, blockEnd),
   hfDownloadShim: (repoId: string, filename: string) =>

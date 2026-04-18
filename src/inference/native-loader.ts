@@ -15,6 +15,7 @@ function isPackaged(): boolean {
 export interface CoralNative {
   hello(): string
   loadBlockRange(modelPath: string, blockStart: number, blockEnd: number, totalBlocks: number): number
+  loadBlockRangeSharded(shardPaths: string[], blockStart: number, blockEnd: number, totalBlocks: number): number
   runForward(handle: number, input: Float32Array, nTokens: number): Float32Array
   freeBlockRange(handle: number): void
   embedTokens(handle: number, tokenIds: Int32Array): Float32Array

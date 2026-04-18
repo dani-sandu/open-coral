@@ -31,13 +31,17 @@ interface PendingCall {
   reject: (error: Error) => void
 }
 
-export interface AsyncBlockRunnerOptions {
-  modelPath: string
+type AsyncBlockRunnerBase = {
   blockStart: number
   blockEnd: number
   totalBlocks: number
   hiddenSize: number
 }
+
+export type AsyncBlockRunnerOptions = AsyncBlockRunnerBase & (
+  | { modelPath: string; modelPaths?: never }
+  | { modelPaths: string[]; modelPath?: never }
+)
 
 /**
  * Drop-in async replacement for BlockRunner that runs all native compute on a
@@ -108,13 +112,25 @@ export class AsyncBlockRunner {
       runner.worker.on('message', onMessage)
     })
 
-    runner._handle = (await runner.call(
-      'loadBlockRange',
-      opts.modelPath,
-      opts.blockStart,
-      opts.blockEnd,
-      opts.totalBlocks,
-    )) as number
+    if (opts.modelPaths && opts.modelPaths.length > 1) {
+      runner._handle = (await runner.call(
+        'loadBlockRangeSharded',
+        opts.modelPaths,
+        opts.blockStart,
+        opts.blockEnd,
+        opts.totalBlocks,
+      )) as number
+    } else {
+      const path = opts.modelPath ?? opts.modelPaths?.[0]
+      if (!path) throw new Error('AsyncBlockRunner: modelPath or modelPaths required')
+      runner._handle = (await runner.call(
+        'loadBlockRange',
+        path,
+        opts.blockStart,
+        opts.blockEnd,
+        opts.totalBlocks,
+      )) as number
+    }
 
     runner._vocabSize = (await runner.call('getVocabSize', runner._handle)) as number
 

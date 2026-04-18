@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 // ── Metadata helpers ──────────────────────────────────────────────────────────
 
@@ -27,15 +28,23 @@ static std::string meta_str(gguf_context* g, const char* key, const char* def = 
 /** Read a u32 metadata value, trying the architecture-specific key first,
  *  then falling back to llama.* for compatibility. */
 static int32_t arch_u32(gguf_context* g, const std::string& arch, const char* suffix, int32_t def = 0) {
-    int32_t v = meta_u32(g, (arch + "." + suffix).c_str(), -1);
-    if (v != -1) return v;
-    return meta_u32(g, (std::string("llama.") + suffix).c_str(), def);
+    std::string key = arch + "." + suffix;
+    int64_t i = gguf_find_key(g, key.c_str());
+    if (i >= 0) return (int32_t)gguf_get_val_u32(g, i);
+    std::string fallback = std::string("llama.") + suffix;
+    i = gguf_find_key(g, fallback.c_str());
+    if (i >= 0) return (int32_t)gguf_get_val_u32(g, i);
+    return def;
 }
 
 static float arch_f32(gguf_context* g, const std::string& arch, const char* suffix, float def = 0.0f) {
-    float v = meta_f32(g, (arch + "." + suffix).c_str(), -1.0f);
-    if (v != -1.0f) return v;
-    return meta_f32(g, (std::string("llama.") + suffix).c_str(), def);
+    std::string key = arch + "." + suffix;
+    int64_t i = gguf_find_key(g, key.c_str());
+    if (i >= 0) return gguf_get_val_f32(g, i);
+    std::string fallback = std::string("llama.") + suffix;
+    i = gguf_find_key(g, fallback.c_str());
+    if (i >= 0) return gguf_get_val_f32(g, i);
+    return def;
 }
 
 // ── Tensor lookup + data pointer fixup ────────────────────────────────────────
@@ -57,6 +66,26 @@ static ggml_tensor* find_and_bind(
     size_t off = gguf_get_tensor_offset(gctx, tidx);
     t->data = file_buf + data_region_start + off;
     return t;
+}
+
+// Multi-shard version: searches across all shard (wctx, gctx, buf) triples.
+static ggml_tensor* find_and_bind_shards(
+    const std::vector<ggml_context*>&          wctxs,
+    const std::vector<gguf_context*>&          gctxs,
+    const std::vector<std::vector<uint8_t>>&   bufs,
+    const std::vector<size_t>&                 data_starts,
+    const char* name
+) {
+    for (size_t i = 0; i < wctxs.size(); i++) {
+        ggml_tensor* t = ggml_get_tensor(wctxs[i], name);
+        if (!t) continue;
+        int64_t tidx = gguf_find_tensor(gctxs[i], name);
+        if (tidx < 0) continue;
+        size_t off = gguf_get_tensor_offset(gctxs[i], tidx);
+        t->data = const_cast<uint8_t*>(bufs[i].data()) + data_starts[i] + off;
+        return t;
+    }
+    return nullptr;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -113,13 +142,15 @@ ModelContext* model_context_load(
     size_t data_start = gguf_get_data_offset(gctx);
 
     auto* mc = new ModelContext();
-    struct McGuard { ModelContext* p; ~McGuard() { if (p) { if (p->weight_ctx) { ggml_free(p->weight_ctx); p->weight_ctx = nullptr; } delete p; } } } mc_guard{mc};
-    mc->file_buf    = std::move(buf);
-    mc->weight_ctx  = wctx;
+    struct McGuard { ModelContext* p; ~McGuard() { if (p) { for (auto w : p->shard_wctxs) if (w) ggml_free(w); delete p; } } } mc_guard{mc};
+    mc->shard_bufs.push_back(std::move(buf));
+    mc->shard_wctxs.push_back(nullptr);  // may throw — wctx_guard still armed
+    mc->shard_wctxs.back() = wctx;       // infallible pointer assignment
+    wctx_guard.g = nullptr;              // disarm — McGuard owns wctx through shard_wctxs
     mc->block_start = block_start;
     mc->block_end   = block_end;
 
-    uint8_t* fb = mc->file_buf.data();
+    uint8_t* fb = mc->shard_bufs[0].data();
 
     // 3. Read model config from GGUF metadata
     std::string arch = meta_str(gctx, "general.architecture", "llama");
@@ -194,8 +225,7 @@ ModelContext* model_context_load(
     }
 
     // gctx_guard fires here and frees gctx (mc does not own it)
-    wctx_guard.g = nullptr;  // disarm — mc now owns wctx cleanup via weight_ctx
-    mc_guard.p   = nullptr;  // disarm — caller takes ownership of mc
+    mc_guard.p = nullptr;  // disarm — caller takes ownership of mc
     return mc;
 }
 
@@ -203,6 +233,164 @@ void model_context_free(ModelContext* mc) {
     if (!mc) return;
     for (auto& pair : mc->sessions) delete pair.second;
     mc->sessions.clear();
-    if (mc->weight_ctx) ggml_free(mc->weight_ctx);
+    for (auto wctx : mc->shard_wctxs) {
+        if (wctx) ggml_free(wctx);
+    }
     delete mc;
+}
+
+ModelContext* model_context_load_shards(
+    const char** shard_paths,
+    int          n_shards,
+    int          block_start,
+    int          block_end,
+    int          total_blocks
+) {
+    if (n_shards < 1) throw std::runtime_error("model_context_load_shards: n_shards < 1");
+    if (block_start < 0 || block_end < block_start || total_blocks <= 0 || block_end >= total_blocks)
+        throw std::runtime_error("Invalid block range");
+
+    auto* mc = new ModelContext();
+    struct McGuard {
+        ModelContext* p;
+        ~McGuard() { if (p) { for (auto w : p->shard_wctxs) if (w) ggml_free(w); delete p; } }
+    } mc_guard{mc};
+
+    mc->block_start = block_start;
+    mc->block_end   = block_end;
+
+    std::vector<gguf_context*> gctxs;
+    std::vector<size_t>        data_starts;
+
+    // Declared before the loop so its destructor covers all elements pushed so far
+    // if the loop throws mid-way.
+    struct GctxGuard {
+        std::vector<gguf_context*>& gs;
+        ~GctxGuard() { for (auto g : gs) if (g) gguf_free(g); }
+    } gctx_guard{gctxs};
+
+    for (int si = 0; si < n_shards; si++) {
+        FILE* f = fopen(shard_paths[si], "rb");
+        if (!f) throw std::runtime_error(std::string("Cannot open shard: ") + shard_paths[si]);
+        fseek(f, 0, SEEK_END);
+        size_t fsize = (size_t)ftell(f);
+        fseek(f, 0, SEEK_SET);
+        std::vector<uint8_t> buf(fsize);
+        if (fread(buf.data(), 1, fsize, f) != fsize) {
+            fclose(f);
+            throw std::runtime_error("Short read on shard");
+        }
+        fclose(f);
+
+        ggml_context* wctx = nullptr;
+        gguf_init_params gp;
+        gp.no_alloc = true;
+        gp.ctx      = &wctx;
+        gguf_context* gctx = gguf_init_from_file(shard_paths[si], gp);
+        if (!gctx) throw std::runtime_error(std::string("Failed to parse GGUF shard: ") + shard_paths[si]);
+        if (!wctx) { gguf_free(gctx); throw std::runtime_error("gguf_init did not create ggml context"); }
+
+        // Push gctx first so GctxGuard covers it on any subsequent throw.
+        gctxs.push_back(gctx);
+
+        // Local guard for wctx until McGuard (via shard_wctxs) takes ownership.
+        // push_back(nullptr) may throw; if so WctxGuard frees wctx. The
+        // subsequent .back() = wctx is infallible (pointer assignment), so
+        // we can safely disarm the guard immediately after.
+        struct WctxGuard {
+            ggml_context*& w;
+            ~WctxGuard() { if (w) { ggml_free(w); w = nullptr; } }
+        } wctx_guard{wctx};
+
+        mc->shard_wctxs.push_back(nullptr);  // reserve slot first — may throw; WctxGuard covers wctx
+        mc->shard_bufs.push_back(std::move(buf));  // push buf after slot reserved
+        mc->shard_wctxs.back() = wctx;       // infallible pointer assignment
+        wctx_guard.w = nullptr;              // disarm — McGuard owns wctx through shard_wctxs
+
+        data_starts.push_back(gguf_get_data_offset(gctx));
+    }
+
+    // Read config from shard 0 (has all metadata KVs)
+    gguf_context* g0 = gctxs[0];
+    std::string arch = meta_str(g0, "general.architecture", "llama");
+    mc->config.n_embd         = arch_u32(g0, arch, "embedding_length");
+    mc->config.n_head         = arch_u32(g0, arch, "attention.head_count");
+    mc->config.n_kv_head      = arch_u32(g0, arch, "attention.head_count_kv");
+    mc->config.n_ff           = arch_u32(g0, arch, "feed_forward_length");
+    mc->config.rms_norm_eps   = arch_f32(g0, arch, "attention.layer_norm_rms_epsilon", 1e-5f);
+    mc->config.rope_freq_base = arch_f32(g0, arch, "rope.freq_base", 10000.0f);
+
+    bool is_gemma = (arch == "gemma" || arch == "gemma2");
+    if (is_gemma) {
+        mc->config.embed_scale       = sqrtf((float)mc->config.n_embd);
+        mc->config.norm_weight_plus1 = true;
+    }
+    if (arch == "gemma2") {
+        mc->config.attn_logit_cap    = arch_f32(g0, arch, "attn_logit_softcapping", 50.0f);
+        mc->config.final_logit_cap   = arch_f32(g0, arch, "final_logit_softcapping", 30.0f);
+        mc->config.use_post_attn_norm = true;
+        mc->config.use_post_ffn_norm  = true;
+    }
+
+    // Build tensor name → (shard_index, tensor*) map for O(1) per-tensor lookup.
+    // Without this, find_and_bind_shards would be O(shards × tensors) per call.
+    std::unordered_map<std::string, std::pair<size_t, ggml_tensor*>> tensor_map;
+    for (size_t i = 0; i < mc->shard_wctxs.size(); i++) {
+        int64_t n = gguf_get_n_tensors(gctxs[i]);
+        for (int64_t j = 0; j < n; j++) {
+            const char* tname = gguf_get_tensor_name(gctxs[i], j);
+            ggml_tensor* t = ggml_get_tensor(mc->shard_wctxs[i], tname);
+            if (t) tensor_map.emplace(tname, std::make_pair(i, t));
+        }
+    }
+
+    auto B = [&](const char* name) -> ggml_tensor* {
+        auto it = tensor_map.find(name);
+        if (it == tensor_map.end()) return nullptr;
+        size_t i = it->second.first;
+        ggml_tensor* t = it->second.second;
+        int64_t tidx = gguf_find_tensor(gctxs[i], name);
+        if (tidx < 0) return nullptr;
+        size_t off = gguf_get_tensor_offset(gctxs[i], tidx);
+        t->data = const_cast<uint8_t*>(mc->shard_bufs[i].data()) + data_starts[i] + off;
+        return t;
+    };
+
+    if (block_start == 0) {
+        mc->embd_weight = B("token_embd.weight");
+        if (mc->embd_weight) mc->config.n_vocab = (int32_t)mc->embd_weight->ne[1];
+    }
+
+    int n_layers = block_end - block_start + 1;
+    mc->layers.resize(n_layers);
+    for (int bi = block_start; bi <= block_end; bi++) {
+        auto& lw  = mc->layers[bi - block_start];
+        auto  pfx = std::string("blk.") + std::to_string(bi) + ".";
+        auto  BL  = [&](const char* suf) -> ggml_tensor* {
+            return B((pfx + suf).c_str());
+        };
+        lw.attn_norm = BL("attn_norm.weight");
+        lw.attn_q    = BL("attn_q.weight");
+        lw.attn_k    = BL("attn_k.weight");
+        lw.attn_v    = BL("attn_v.weight");
+        lw.attn_o    = BL("attn_output.weight");
+        lw.ffn_norm  = BL("ffn_norm.weight");
+        lw.ffn_gate  = BL("ffn_gate.weight");
+        lw.ffn_up    = BL("ffn_up.weight");
+        lw.ffn_down  = BL("ffn_down.weight");
+        if (mc->config.use_post_attn_norm) lw.post_attn_norm = BL("post_attention_norm.weight");
+        if (mc->config.use_post_ffn_norm)  lw.post_ffn_norm  = BL("post_ffw_norm.weight");
+    }
+
+    if (block_end == total_blocks - 1) {
+        mc->output_norm = B("output_norm.weight");
+        mc->output_wt   = B("output.weight");
+        if (!mc->output_wt && mc->embd_weight) mc->output_wt = mc->embd_weight;
+        if (!mc->output_wt) mc->output_wt = B("token_embd.weight");
+        if (mc->output_wt && mc->config.n_vocab == 0)
+            mc->config.n_vocab = (int32_t)mc->output_wt->ne[1];
+    }
+
+    mc_guard.p = nullptr;
+    return mc;
 }

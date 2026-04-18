@@ -140,11 +140,12 @@ export function setupBlockHostIPC(
     ]
     const missing = REQUIRED_SUFFIXES.filter(s => !model.blockTensorSuffixes.includes(s))
     if (missing.length > 0) {
-      const has = model.blockTensorSuffixes.join(', ')
       throw new Error(
-        `This model uses an unsupported architecture (${model.architecture}). ` +
-        `The native runner expects separate Q/K/V projections (llama-style) but this model has: ${has}. ` +
-        `Missing: ${missing.join(', ')}`,
+        `Architecture "${model.architecture}" is not supported by the OpenCoral inference engine. ` +
+        `The engine currently supports llama-style models (Llama, Mistral, Qwen, Gemma, and similar) ` +
+        `that use standard separate Q/K/V attention projections. ` +
+        `This model uses a different attention mechanism (missing: ${missing.join(', ')}). ` +
+        `Please load a different model.`,
       )
     }
 
@@ -159,7 +160,10 @@ export function setupBlockHostIPC(
     cachedTokenizer = null  // invalidate on model/block change
 
     const runner = await AsyncBlockRunner.create({
-      modelPath: model.path,
+      ...(model.shardFiles && model.shardFiles.length > 1
+        ? { modelPaths: model.shardFiles }
+        : { modelPath: model.path }
+      ),
       blockStart,
       blockEnd,
       totalBlocks: model.totalBlocks,

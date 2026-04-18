@@ -3,6 +3,9 @@ import type {
   ModelInfo, LocalModelEntry, HostingState,
   HFModelResult, HFFileInfo, HFModelPreview, DownloadProgress, BlockEstimate,
 } from '../../types'
+import type { ShardSet } from '../../types'
+// shard-utils imports only from gguf-partial/types — no Node.js deps, safe for renderer
+import { groupShardSets, isShardSet } from '../../../../inference/shard-utils'
 import { extractQuant, getQuantInfo } from './ModelFiles'
 import TabShell from '../shared/TabShell'
 import ModelHome from './ModelHome'
@@ -40,7 +43,7 @@ export default function ModelsPanel(): React.JSX.Element {
   const [results, setResults] = useState<HFModelResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selectedRepo, setSelectedRepo] = useState<HFModelResult | null>(null)
-  const [files, setFiles] = useState<HFFileInfo[]>([])
+  const [files, setFiles] = useState<(HFFileInfo | ShardSet)[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [showAllFiles, setShowAllFiles] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -48,7 +51,7 @@ export default function ModelsPanel(): React.JSX.Element {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [preview, setPreview] = useState<HFModelPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<HFFileInfo | null>(null)
+  const [selectedFile, setSelectedFile] = useState<HFFileInfo | ShardSet | null>(null)
   const [pBlockStart, setPBlockStart] = useState(0)
   const [pBlockEnd, setPBlockEnd] = useState(0)
   const [estimate, setEstimate] = useState<BlockEstimate | null>(null)
@@ -180,12 +183,13 @@ export default function ModelsPanel(): React.JSX.Element {
     setShowAllFiles(false)
     try {
       const f = await window.opencoral.hfListFiles(repo.id)
-      f.sort((a, b) => {
-        const qa = extractQuant(a.rfilename)
-        const qb = extractQuant(b.rfilename)
+      const grouped = groupShardSets(f)
+      grouped.sort((a, b) => {
+        const qa = extractQuant('canonical' in a ? a.canonical : a.rfilename)
+        const qb = extractQuant('canonical' in b ? b.canonical : b.rfilename)
         return (qa ? getQuantInfo(qa).order : 50) - (qb ? getQuantInfo(qb).order : 50)
       })
-      setFiles(f)
+      setFiles(grouped)
       setView('files')
     } catch (e) { setError(String(e)) }
     finally { setLoadingFiles(false) }
@@ -197,7 +201,7 @@ export default function ModelsPanel(): React.JSX.Element {
     setView('files')
   }, [])
 
-  const selectFileForPreview = useCallback(async (file: HFFileInfo) => {
+  const selectFileForPreview = useCallback(async (file: HFFileInfo | ShardSet) => {
     if (!selectedRepo) return
     setSelectedFile(file)
     setPreviewLoading(true)
@@ -205,12 +209,15 @@ export default function ModelsPanel(): React.JSX.Element {
     setEstimate(null)
     setError(null)
     setView('preview')
+
+    const previewFilename = ('canonical' in file) ? file.canonical : file.rfilename
+
     try {
-      const p = await window.opencoral.hfPreviewModel(selectedRepo.id, file.rfilename)
+      const p = await window.opencoral.hfPreviewModel(selectedRepo.id, previewFilename)
       setPreview(p)
       setPBlockStart(0)
       setPBlockEnd(Math.min(3, p.totalBlocks - 1))
-      const est = await window.opencoral.hfEstimateBlocks(0, Math.min(3, p.totalBlocks - 1))
+      const est = await window.opencoral.hfEstimateBlocks(previewFilename, 0, Math.min(3, p.totalBlocks - 1))
       setEstimate(est)
     } catch (e) {
       setError(String(e))
@@ -219,13 +226,15 @@ export default function ModelsPanel(): React.JSX.Element {
   }, [selectedRepo])
 
   const updateEstimate = useCallback(async (start: number, end: number) => {
+    if (!selectedFile) return
+    const previewFilename = ('canonical' in selectedFile) ? selectedFile.canonical : selectedFile.rfilename
     setPBlockStart(start)
     setPBlockEnd(end)
     try {
-      const est = await window.opencoral.hfEstimateBlocks(start, end)
+      const est = await window.opencoral.hfEstimateBlocks(previewFilename, start, end)
       setEstimate(est)
     } catch { setEstimate(null) }
-  }, [])
+  }, [selectedFile])
 
   const startPartialDownload = useCallback(async (full = false) => {
     if (!selectedRepo || !selectedFile) return
@@ -235,9 +244,15 @@ export default function ModelsPanel(): React.JSX.Element {
     setView('downloading')
     try {
       if (full) {
-        await window.opencoral.hfDownload(selectedRepo.id, selectedFile.rfilename)
+        const filenames = ('canonical' in selectedFile)
+          ? selectedFile.shardFiles
+          : [selectedFile.rfilename]
+        await window.opencoral.hfDownload(selectedRepo.id, filenames)
       } else {
-        await window.opencoral.hfDownloadPartial(selectedRepo.id, selectedFile.rfilename, pBlockStart, pBlockEnd)
+        const canonicalFilename = ('canonical' in selectedFile)
+          ? selectedFile.canonical
+          : selectedFile.rfilename
+        await window.opencoral.hfDownloadPartial(selectedRepo.id, canonicalFilename, pBlockStart, pBlockEnd)
       }
     } catch (e) {
       setError(String(e))

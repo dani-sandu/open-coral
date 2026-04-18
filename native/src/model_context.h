@@ -55,8 +55,11 @@ struct SessionState {
 };
 
 struct ModelContext {
-    ggml_context*          weight_ctx  = nullptr;  // tensor metadata context (from gguf_init)
-    std::vector<uint8_t>   file_buf;               // raw GGUF file — tensors point into here
+    // Shard storage — index 0 is always shard 1 (the metadata shard).
+    // Single-file models use a vector of size 1.
+    std::vector<ggml_context*>          shard_wctxs;
+    std::vector<std::vector<uint8_t>>   shard_bufs;
+
     ModelConfig            config;
     int                    block_start = 0;
     int                    block_end   = 0;
@@ -65,10 +68,10 @@ struct ModelContext {
     ggml_tensor*           output_wt   = nullptr;
     std::vector<LayerWeights> layers;
 
-    // Session management for KV caching
     std::unordered_map<int, SessionState*> sessions;
     int next_session_id = 1;
 };
 
 ModelContext* model_context_load(const char* path, int block_start, int block_end, int total_blocks);
+ModelContext* model_context_load_shards(const char** shard_paths, int n_shards, int block_start, int block_end, int total_blocks);
 void          model_context_free(ModelContext* mc);

@@ -5,7 +5,10 @@ import https from 'https'
 import http from 'http'
 import { parseGGUFHeader } from '../inference/gguf-parser'
 import { countBlocks, extractBlockTensors, extractShimTensors } from '../inference/block-extractor'
-import { tensorDataSize, tensorByteRanges, buildPartialGGUF, estimatePartialSize } from '../inference/gguf-partial'
+import { tensorDataSize, tensorByteRanges, buildPartialGGUFHeader, estimatePartialSize } from '../inference/gguf-partial'
+import { buildShardMap, parseShardInfo } from '../inference/shard-utils'
+import type { GGUFHeader } from '../inference/types'
+import type { ShardMap } from '../inference/shard-utils'
 
 // ── HF Hub API types ────────────────────────────────────────────────────────────
 
@@ -32,6 +35,8 @@ export interface DownloadProgress {
   done: boolean
   error?: string
   localPath?: string
+  currentShard?: number
+  totalShards?: number
 }
 
 export interface HFModelPreview {
@@ -52,6 +57,11 @@ function modelsDir(): string {
   const dir = join(app.getPath('userData'), 'models')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/** Strip any directory components HuggingFace includes in rfilename (e.g. "quants/model.gguf" → "model.gguf"). */
+function toLocalFilename(hfFilename: string): string {
+  return hfFilename.split('/').pop() ?? hfFilename
 }
 
 // ── HF API helpers ──────────────────────────────────────────────────────────────
@@ -110,7 +120,7 @@ function downloadFile(
   filename: string,
   onProgress: (p: DownloadProgress) => void,
 ): { promise: Promise<string>; abort: () => void } {
-  const localPath = join(modelsDir(), filename)
+  const localPath = join(modelsDir(), toLocalFilename(filename))
   let aborted = false
   let req: http.ClientRequest | null = null
 
@@ -185,6 +195,13 @@ function downloadFile(
   }
 }
 
+// ── Cached header for partial download flow ───────────────────────────────────
+
+let cachedHeaderBuf: Buffer | null = null
+let cachedHeader: ReturnType<typeof parseGGUFHeader> | null = null
+let cachedShardMap: ShardMap | null = null
+let cachedForFilename: string | null = null  // filename that produced cachedHeader/cachedShardMap
+
 // ── IPC handlers ────────────────────────────────────────────────────────────────
 
 /**
@@ -243,21 +260,30 @@ export async function downloadShimGGUF(repoId: string, filename: string): Promis
   const abortController = { abort: () => { aborted = true } }
   activeDownload = abortController
 
+  const { headerBuf: ggufHeader, tensorPadding } = buildPartialGGUFHeader(headerBuf, header, selectedTensors)
+
+  const ws = createWriteStream(localPath)
+  const wsWrite = (buf: Buffer): Promise<void> =>
+    new Promise((res, rej) => { ws.write(buf, (e) => e ? rej(e) : res()) })
+  const wsEnd = (): Promise<void> =>
+    new Promise((res, rej) => { ws.end((e?: Error | null) => e ? rej(e) : res()) })
+
   try {
-    const tensorDataChunks = new Map<string, Buffer>()
-    for (const range of ranges) {
+    await wsWrite(ggufHeader)
+
+    for (let i = 0; i < ranges.length; i++) {
       if (aborted) throw new Error('Cancelled')
+      const range = ranges[i]
       const data = await downloadRange(repoId, filename, range.absoluteOffset, range.absoluteOffset + range.size - 1)
-      tensorDataChunks.set(range.name, data)
+      await wsWrite(data)
+      if (tensorPadding[i] > 0) await wsWrite(Buffer.alloc(tensorPadding[i]))
       downloaded += data.length
       const percent = totalDownload > 0 ? Math.round((downloaded / totalDownload) * 100) : 0
       lastProgress = { file: shimName, downloadedBytes: downloaded, totalBytes: totalDownload, percent, done: false }
     }
 
     if (aborted) throw new Error('Cancelled')
-
-    const partialBuf = buildPartialGGUF(headerBuf, header, selectedTensors, tensorDataChunks)
-    writeFileSync(localPath, partialBuf)
+    await wsEnd()
 
     const meta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null, shim: true }
     writeFileSync(localPath + '.opencoral-meta.json', JSON.stringify(meta, null, 2), 'utf-8')
@@ -266,6 +292,7 @@ export async function downloadShimGGUF(repoId: string, filename: string): Promis
     activeDownload = null
     return localPath
   } catch (err) {
+    ws.destroy()
     activeDownload = null
     try { unlinkSync(localPath) } catch {}
     throw err
@@ -285,28 +312,87 @@ export function setupHuggingFaceIPC(): void {
   ipcMain.handle('opencoral:hf-download', async (
     _event,
     repoId: string,
-    filename: string,
+    filenames: string[],
   ): Promise<string> => {
-    // Cancel any in-flight download
+    if (!Array.isArray(filenames) || filenames.length === 0) {
+      throw new Error('filenames must be a non-empty array')
+    }
+
     if (activeDownload) {
       activeDownload.abort()
       activeDownload = null
     }
 
-    const { promise, abort } = downloadFile(repoId, filename, (p) => {
-      lastProgress = p
-    })
-    activeDownload = { abort }
+    const isSharded = filenames.length > 1
+    let aborted = false
+    const abortFns: Array<() => void> = []
+    activeDownload = { abort: () => { aborted = true; abortFns.forEach(fn => fn()) } }
 
     try {
-      const localPath = await promise
+      let lastLocalPath = ''
+
+      for (let i = 0; i < filenames.length; i++) {
+        if (aborted) throw new Error('Cancelled')
+        const filename = filenames[i]
+
+        lastProgress = {
+          file: filename,
+          downloadedBytes: 0,
+          totalBytes: 0,
+          percent: 0,
+          done: false,
+          currentShard: isSharded ? i + 1 : undefined,
+          totalShards: isSharded ? filenames.length : undefined,
+        }
+
+        const { promise, abort } = downloadFile(repoId, filename, (p) => {
+          lastProgress = {
+            ...p,
+            currentShard: isSharded ? i + 1 : undefined,
+            totalShards: isSharded ? filenames.length : undefined,
+          }
+        })
+        abortFns.push(abort)
+
+        lastLocalPath = await promise
+
+        if (!isSharded) {
+          const fullMeta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null }
+          writeFileSync(lastLocalPath + '.opencoral-meta.json', JSON.stringify(fullMeta, null, 2), 'utf-8')
+        }
+      }
+
+      if (isSharded) {
+        const localShard1 = toLocalFilename(filenames[0])
+        const info = parseShardInfo(localShard1)
+        const manifestName = (info?.prefix ?? localShard1.replace(/\.gguf$/i, '')) + '.opencoral-meta.json'
+        const manifestPath = join(modelsDir(), manifestName)
+        const manifest = {
+          repoId,
+          hfFilename: filenames[0],  // original HF name for identity lookup
+          shardFiles: filenames.map(toLocalFilename),  // local basenames for file lookup
+          totalShards: filenames.length,
+          blockStart: null,
+          blockEnd: null,
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8')
+      }
+
       activeDownload = null
-      // Write HF identity sidecar
-      const fullMeta = { repoId, hfFilename: filename, blockStart: null, blockEnd: null }
-      writeFileSync(localPath + '.opencoral-meta.json', JSON.stringify(fullMeta, null, 2), 'utf-8')
-      return localPath
+      const shard1Path = join(modelsDir(), toLocalFilename(filenames[0]))
+      lastProgress = lastProgress ? { ...lastProgress, done: true, localPath: shard1Path } : null
+      return shard1Path
     } catch (err) {
       activeDownload = null
+      for (const f of filenames) {
+        try { unlinkSync(join(modelsDir(), toLocalFilename(f))) } catch {}
+      }
+      if (filenames.length > 1) {
+        const localShard1 = toLocalFilename(filenames[0])
+        const info = parseShardInfo(localShard1)
+        const manifestName = (info?.prefix ?? localShard1.replace(/\.gguf$/i, '')) + '.opencoral-meta.json'
+        try { unlinkSync(join(modelsDir(), manifestName)) } catch {}
+      }
       throw err
     }
   })
@@ -359,6 +445,50 @@ export function setupHuggingFaceIPC(): void {
     // Cache the header for partial download
     cachedHeaderBuf = headerBuf
     cachedHeader = header
+    cachedForFilename = filename
+
+    // For multi-shard models: fetch remaining shard headers and build combined tensor list
+    cachedShardMap = null
+    const shardInfo = parseShardInfo(filename)
+    if (shardInfo && shardInfo.totalShards > 1 && cachedHeader) {
+      const allShards: Array<{ filename: string; header: GGUFHeader }> = [
+        { filename, header: cachedHeader },
+      ]
+
+      for (let s = 2; s <= shardInfo.totalShards; s++) {
+        const shardFilename = filename.replace(
+          /-\d{5}-of-\d{5}\.gguf$/i,
+          `-${String(s).padStart(5, '0')}-of-${String(shardInfo.totalShards).padStart(5, '0')}.gguf`
+        )
+        const fetchSizes = [10 * 1024 * 1024, 30 * 1024 * 1024, 80 * 1024 * 1024]
+        let fetched = false
+        for (const size of fetchSizes) {
+          try {
+            const buf = await downloadRange(repoId, shardFilename, 0, size - 1)
+            const shardHeader = parseGGUFHeader(buf)
+            allShards.push({ filename: shardFilename, header: shardHeader })
+            fetched = true
+            break
+          } catch (e) {
+            if (size === fetchSizes[fetchSizes.length - 1]) {
+              console.warn(`[hf-preview] Could not fetch header for shard ${s}: ${e}`)
+            }
+          }
+        }
+        if (!fetched) {
+          throw new Error(`Failed to fetch header for shard ${s} of ${shardInfo.totalShards}. Cross-shard partial downloads require all shard headers.`)
+        }
+      }
+
+      // Merge all shard tensors into cachedHeader so hfEstimateBlocks sees the full tensor list
+      cachedHeader = {
+        ...cachedHeader,
+        tensors: allShards.flatMap(s => s.header.tensors),
+        tensorCount: BigInt(allShards.reduce((n, s) => n + s.header.tensors.length, 0)),
+      }
+
+      cachedShardMap = buildShardMap(allShards)
+    }
 
     return {
       architecture, totalBlocks, hiddenSize, headCount,
@@ -370,10 +500,12 @@ export function setupHuggingFaceIPC(): void {
 
   ipcMain.handle('opencoral:hf-estimate-blocks', async (
     _event,
+    filename: string,
     blockStart: number,
     blockEnd: number,
   ): Promise<{ partialSize: number; fullSize: number; savedPercent: number }> => {
     if (!cachedHeader) throw new Error('Call opencoral:hf-preview-model first')
+    if (filename !== cachedForFilename) throw new Error('Cached header is for a different file — call hf-preview-model first')
     const total = countBlocks(cachedHeader)
     const extracted = extractBlockTensors(cachedHeader, { start: blockStart, end: blockEnd }, total)
     const allTensors = [
@@ -397,6 +529,7 @@ export function setupHuggingFaceIPC(): void {
     blockEnd: number,
   ): Promise<string> => {
     if (!cachedHeader || !cachedHeaderBuf) throw new Error('Call opencoral:hf-preview-model first')
+    if (filename !== cachedForFilename) throw new Error('Cached header is for a different file — call hf-preview-model first')
 
     if (activeDownload) {
       activeDownload.abort()
@@ -414,11 +547,13 @@ export function setupHuggingFaceIPC(): void {
     ]
 
     const ranges = tensorByteRanges(header, selectedTensors)
-    const totalDownload = ranges.reduce((s, r) => s + r.size, 0)
+    const totalDownload = cachedShardMap
+      ? selectedTensors.reduce((s, t) => s + (cachedShardMap!.get(t.name)?.size ?? 0), 0)
+      : ranges.reduce((s, r) => s + r.size, 0)
     let downloaded = 0
     let aborted = false
 
-    const baseName = filename.replace(/\.gguf$/i, '')
+    const baseName = toLocalFilename(filename).replace(/\.gguf$/i, '')
     const partialName = `${baseName}.blocks-${blockStart}-${blockEnd}.gguf`
     const localPath = join(modelsDir(), partialName)
 
@@ -432,23 +567,50 @@ export function setupHuggingFaceIPC(): void {
     const abortController = { abort: () => { aborted = true } }
     activeDownload = abortController
 
+    // Build the GGUF header in memory (small: metadata + tensor infos only)
+    const { headerBuf: ggufHeader, tensorPadding } = buildPartialGGUFHeader(headerBuf, header, selectedTensors)
+
+    // Open output file and stream tensor data directly to disk to avoid giant in-memory buffers
+    const ws = createWriteStream(localPath)
+    const wsWrite = (buf: Buffer): Promise<void> =>
+      new Promise((res, rej) => { ws.write(buf, (e) => e ? rej(e) : res()) })
+    const wsEnd = (): Promise<void> =>
+      new Promise((res, rej) => { ws.end((e?: Error | null) => e ? rej(e) : res()) })
+
     try {
-      // Download each tensor's byte range
-      const tensorDataChunks = new Map<string, Buffer>()
-      for (const range of ranges) {
-        if (aborted) throw new Error('Cancelled')
-        const data = await downloadRange(repoId, filename, range.absoluteOffset, range.absoluteOffset + range.size - 1)
-        tensorDataChunks.set(range.name, data)
-        downloaded += data.length
-        const percent = totalDownload > 0 ? Math.round((downloaded / totalDownload) * 100) : 0
-        lastProgress = { file: partialName, downloadedBytes: downloaded, totalBytes: totalDownload, percent, done: false }
+      await wsWrite(ggufHeader)
+
+      if (cachedShardMap) {
+        // Multi-shard: fetch each tensor from its shard, write directly to disk
+        for (let i = 0; i < selectedTensors.length; i++) {
+          if (aborted) throw new Error('Cancelled')
+          const t = selectedTensors[i]
+          const loc = cachedShardMap.get(t.name)
+          if (!loc) throw new Error(`Tensor not found in any shard: ${t.name}`)
+
+          const data = await downloadRange(repoId, loc.shardFilename, loc.absoluteByteOffset, loc.absoluteByteOffset + loc.size - 1)
+          await wsWrite(data)
+          if (tensorPadding[i] > 0) await wsWrite(Buffer.alloc(tensorPadding[i]))
+          downloaded += data.length
+          const percent = totalDownload > 0 ? Math.round((downloaded / totalDownload) * 100) : 0
+          lastProgress = { file: partialName, downloadedBytes: downloaded, totalBytes: totalDownload, percent, done: false }
+        }
+      } else {
+        // Single-file: write each tensor range directly to disk
+        for (let i = 0; i < ranges.length; i++) {
+          if (aborted) throw new Error('Cancelled')
+          const range = ranges[i]
+          const data = await downloadRange(repoId, filename, range.absoluteOffset, range.absoluteOffset + range.size - 1)
+          await wsWrite(data)
+          if (tensorPadding[i] > 0) await wsWrite(Buffer.alloc(tensorPadding[i]))
+          downloaded += data.length
+          const percent = totalDownload > 0 ? Math.round((downloaded / totalDownload) * 100) : 0
+          lastProgress = { file: partialName, downloadedBytes: downloaded, totalBytes: totalDownload, percent, done: false }
+        }
       }
 
       if (aborted) throw new Error('Cancelled')
-
-      // Build partial GGUF
-      const partialBuf = buildPartialGGUF(headerBuf, header, selectedTensors, tensorDataChunks)
-      writeFileSync(localPath, partialBuf)
+      await wsEnd()
 
       // Write HF identity sidecar
       const meta = { repoId, hfFilename: filename, blockStart, blockEnd }
@@ -458,6 +620,7 @@ export function setupHuggingFaceIPC(): void {
       activeDownload = null
       return localPath
     } catch (err) {
+      ws.destroy()
       activeDownload = null
       try { unlinkSync(localPath) } catch {}
       throw err
@@ -474,11 +637,6 @@ export function setupHuggingFaceIPC(): void {
     return downloadShimGGUF(repoId, filename)
   })
 }
-
-// ── Cached header for partial download flow ───────────────────────────────────
-
-let cachedHeaderBuf: Buffer | null = null
-let cachedHeader: ReturnType<typeof parseGGUFHeader> | null = null
 
 // ── HTTP Range request helper ─────────────────────────────────────────────────
 

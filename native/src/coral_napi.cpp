@@ -39,6 +39,52 @@ Napi::Number LoadBlockRange(const Napi::CallbackInfo& info) {
     }
 }
 
+// ── loadBlockRangeSharded ─────────────────────────────────────────────────────
+// Args: shardPaths: string[], blockStart: number, blockEnd: number, totalBlocks: number
+Napi::Number LoadBlockRangeSharded(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 4 || !info[0].IsArray() ||
+        !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsNumber()) {
+        Napi::TypeError::New(env,
+            "loadBlockRangeSharded(shardPaths: string[], blockStart, blockEnd, totalBlocks)"
+        ).ThrowAsJavaScriptException();
+        return {};
+    }
+
+    auto arr = info[0].As<Napi::Array>();
+    std::vector<std::string> paths_storage;
+    std::vector<const char*> paths;
+    paths_storage.reserve(arr.Length());
+    paths.reserve(arr.Length());
+
+    for (uint32_t i = 0; i < arr.Length(); i++) {
+        Napi::Value v = arr[i];
+        if (!v.IsString()) {
+            Napi::TypeError::New(env, "shardPaths must be an array of strings").ThrowAsJavaScriptException();
+            return {};
+        }
+        paths_storage.push_back(v.As<Napi::String>().Utf8Value());
+        paths.push_back(paths_storage.back().c_str());
+    }
+
+    int block_start  = info[1].As<Napi::Number>().Int32Value();
+    int block_end    = info[2].As<Napi::Number>().Int32Value();
+    int total_blocks = info[3].As<Napi::Number>().Int32Value();
+
+    try {
+        ModelContext* mc = model_context_load_shards(
+            paths.data(), (int)paths.size(), block_start, block_end, total_blocks
+        );
+        if (!mc) { Napi::Error::New(env, "model_context_load_shards returned null").ThrowAsJavaScriptException(); return {}; }
+        uint32_t handle = g_next_handle.fetch_add(1);
+        g_handles[handle] = mc;
+        return Napi::Number::New(env, handle);
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return {};
+    }
+}
+
 // ── freeBlockRange ────────────────────────────────────────────────────────────
 Napi::Value FreeBlockRange(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -241,9 +287,10 @@ Napi::Value SessionForward(const Napi::CallbackInfo& info) {
 
 // ── module registration ───────────────────────────────────────────────────────
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    exports.Set("hello",            Napi::Function::New(env, Hello));
-    exports.Set("loadBlockRange",   Napi::Function::New(env, LoadBlockRange));
-    exports.Set("freeBlockRange",   Napi::Function::New(env, FreeBlockRange));
+    exports.Set("hello",                 Napi::Function::New(env, Hello));
+    exports.Set("loadBlockRange",        Napi::Function::New(env, LoadBlockRange));
+    exports.Set("loadBlockRangeSharded", Napi::Function::New(env, LoadBlockRangeSharded));
+    exports.Set("freeBlockRange",        Napi::Function::New(env, FreeBlockRange));
     exports.Set("runForward",       Napi::Function::New(env, RunForward));
     exports.Set("embedTokens",     Napi::Function::New(env, EmbedTokens));
     exports.Set("projectToLogits", Napi::Function::New(env, ProjectToLogits));
