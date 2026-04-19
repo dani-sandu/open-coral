@@ -37,6 +37,7 @@ add_library(coral_native SHARED
   src/coral_napi.cpp
   src/model_context.cpp
   src/block_forward.cpp
+  src/vocab_context.cpp
   ${CMAKE_JS_SRC}
 )
 

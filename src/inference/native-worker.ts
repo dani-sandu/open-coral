@@ -172,3 +172,76 @@ export class AsyncBlockRunner {
     await this.worker.terminate()
   }
 }
+
+export class AsyncVocabRunner {
+  private worker: Worker
+  private pending = new Map<number, PendingCall>()
+  private nextId = 1
+  private _handle = 0
+  private _disposed = false
+
+  private constructor() {
+    const addonPath = getNativePath()
+    this.worker = new Worker(WORKER_SCRIPT, {
+      eval: true,
+      workerData: { addonPath },
+    })
+    this.worker.on('error', (err) => {
+      for (const [, p] of this.pending) p.reject(err)
+      this.pending.clear()
+    })
+  }
+
+  private call(op: string, ...args: unknown[]): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++
+      this.pending.set(id, { resolve, reject })
+      this.worker.postMessage({ id, op, args })
+    })
+  }
+
+  static async create(modelPath: string): Promise<AsyncVocabRunner> {
+    const runner = new AsyncVocabRunner()
+    await new Promise<void>((resolve) => {
+      const onMessage = (msg: { ready?: boolean }): void => {
+        if (msg.ready) {
+          runner.worker.off('message', onMessage)
+          runner.worker.on('message', (m: { id: number; result?: unknown; error?: string }) => {
+            const p = runner.pending.get(m.id)
+            if (!p) return
+            runner.pending.delete(m.id)
+            if (m.error) p.reject(new Error(m.error))
+            else p.resolve(m.result)
+          })
+          resolve()
+        }
+      }
+      runner.worker.on('message', onMessage)
+    })
+    runner._handle = (await runner.call('loadVocab', modelPath)) as number
+    return runner
+  }
+
+  tokenize(text: string, addSpecial: boolean, parseSpecial: boolean): Promise<Int32Array> {
+    return this.call('nativeTokenize', this._handle, text, addSpecial, parseSpecial) as Promise<Int32Array>
+  }
+
+  tokenToPiece(tokenId: number): Promise<string> {
+    return this.call('nativeTokenToPiece', this._handle, tokenId) as Promise<string>
+  }
+
+  applyChatTemplate(userMessage: string): Promise<string> {
+    return this.call('nativeApplyChatTemplate', this._handle, userMessage) as Promise<string>
+  }
+
+  getSpecialTokens(): Promise<{ bosId: number; eosId: number; eotId: number; vocabSize: number }> {
+    return this.call('nativeGetSpecialTokens', this._handle) as Promise<{ bosId: number; eosId: number; eotId: number; vocabSize: number }>
+  }
+
+  async dispose(): Promise<void> {
+    if (this._disposed) return
+    this._disposed = true
+    await this.call('freeVocab', this._handle)
+    await this.worker.terminate()
+  }
+}

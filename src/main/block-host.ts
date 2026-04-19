@@ -5,10 +5,10 @@ import { BlockRegistry } from '../p2p/block-registry'
 import { registerInferenceHandlerV3 } from '../p2p/inference-protocol'
 import { registerKVHandler, KVSessionClient, type KVSessionHandler } from '../p2p/kv-protocol'
 import { PipelineScheduler } from '../inference/pipeline-scheduler'
-import { getCurrentModel, getCurrentGGUFHeader } from './model-manager'
+import { getCurrentModel } from './model-manager'
 import { SequenceManager, type ChainStepWithCandidates } from '../inference/sequence-manager'
 import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
-import { createTokenizer, type Tokenizer } from '../inference/tokenizer'
+import { loadNativeTokenizer, freeNativeTokenizer, type NativeTokenizer } from '../inference/native-tokenizer'
 import { peerIdFromString } from '@libp2p/peer-id'
 import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
@@ -46,7 +46,7 @@ interface ActiveHost {
 }
 
 let activeHost: ActiveHost | null = null
-let cachedTokenizer: Tokenizer | null = null
+let cachedTokenizer: NativeTokenizer | null = null
 
 // ── Shim runner for remote-only inference ────────────────────────────────────
 // Loaded from a shim GGUF (embed + output tensors, no blocks).
@@ -58,7 +58,8 @@ export async function loadShimRunner(shimPath: string, totalBlocks: number, hidd
     await shimRunner.dispose()
     shimRunner = null
   }
-  cachedTokenizer = null
+  if (cachedTokenizer) { await freeNativeTokenizer(cachedTokenizer); cachedTokenizer = null }
+  cachedTokenizer = await loadNativeTokenizer(shimPath)
   shimRunner = await AsyncBlockRunner.create({
     modelPath: shimPath,
     blockStart: 0,
@@ -74,6 +75,7 @@ export async function disposeShimRunner(): Promise<void> {
     await shimRunner.dispose()
     shimRunner = null
   }
+  if (cachedTokenizer) { await freeNativeTokenizer(cachedTokenizer); cachedTokenizer = null }
 }
 
 export function getShimRunner(): AsyncBlockRunner | null {
@@ -157,7 +159,6 @@ export function setupBlockHostIPC(
       activeHost.registry.dispose()
       activeHost = null
     }
-    cachedTokenizer = null  // invalidate on model/block change
 
     const runner = await AsyncBlockRunner.create({
       ...(model.shardFiles && model.shardFiles.length > 1
@@ -240,7 +241,6 @@ export function setupBlockHostIPC(
     await activeHost.runner.dispose()
     activeHost.registry.dispose()
     activeHost = null
-    cachedTokenizer = null
     onBlocksChanged([])
     console.log('[OpenCoral] Stopped hosting blocks')
   })
@@ -276,12 +276,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const requestId = randomUUID()
     console.log(`[OpenCoral] Starting inference ${requestId}: "${prompt.slice(0, 50)}..."`)
 
-    // Build or reuse tokenizer from GGUF metadata
-    if (!cachedTokenizer) {
-      const header = getCurrentGGUFHeader()
-      if (!header) throw new Error('GGUF header not available')
-      cachedTokenizer = createTokenizer(header)
-    }
+    if (!cachedTokenizer) throw new Error('Tokenizer not loaded — call loadShimRunner first')
     const tokenizer = cachedTokenizer
 
     // Prefer activeHost runner for block computation; fall back to null for shim-only mode
@@ -310,7 +305,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const generatedIds: number[] = []
 
     // Tokenize prompt with chat template
-    const promptIds = tokenizer.encodeChat(prompt)
+    const promptIds = await tokenizer.encodeChat(prompt)
     console.log(`[OpenCoral] [${requestId}] Prompt tokens (${promptIds.length})`)
 
     const vocabSize = embedRunner.vocabSize
@@ -372,7 +367,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
         generatedIds.push(nextToken)
         if (step < 5) {
-          console.log(`[OpenCoral] [${requestId}] Step ${step}: token=${nextToken} text="${tokenizer.decodeToken(nextToken)}"`)
+          console.log(`[OpenCoral] [${requestId}] Step ${step}: token=${nextToken} text="${await tokenizer.decodeToken(nextToken)}"`)
         }
 
         // Embed single new token
@@ -417,7 +412,7 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
     return {
       prompt,
-      generatedText: tokenizer.decode(generatedIds),
+      generatedText: await tokenizer.decode(generatedIds),
       generatedTokens: generatedIds.length,
       nEmbd,
       chainSteps,

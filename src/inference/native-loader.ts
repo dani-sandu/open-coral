@@ -24,6 +24,12 @@ export interface CoralNative {
   openSession(handle: number, maxLength: number): number
   closeSession(handle: number, sessionId: number): void
   sessionForward(handle: number, sessionId: number, input: Float32Array, nNewTokens: number): Float32Array
+  loadVocab(path: string): number
+  freeVocab(handle: number): void
+  nativeTokenize(handle: number, text: string, addSpecial: boolean, parseSpecial: boolean): Int32Array
+  nativeTokenToPiece(handle: number, tokenId: number): string
+  nativeApplyChatTemplate(handle: number, userMessage: string): string
+  nativeGetSpecialTokens(handle: number): { bosId: number; eosId: number; eotId: number; vocabSize: number }
 }
 
 let _cached: CoralNative | null = null

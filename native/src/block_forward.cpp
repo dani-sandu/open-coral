@@ -4,7 +4,15 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <thread>
 #include <vector>
+
+// Leave 2 logical cores for the Electron main + renderer processes.
+// hardware_concurrency() returns 0 if unknown; fall back to 2.
+static const int g_n_threads = [] {
+    int hw = (int)std::thread::hardware_concurrency();
+    return std::max(1, (hw > 2 ? hw - 2 : 1));
+}();
 
 // ── Single block ──────────────────────────────────────────────────────────────
 // cctx: scratch context for this computation
@@ -158,7 +166,7 @@ std::vector<float> block_runner_forward(
         ggml_cgraph* graph = ggml_new_graph(cctx);
         ggml_build_forward_expand(graph, out);
 
-        ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, 4);
+        ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, g_n_threads);
         if (status != GGML_STATUS_SUCCESS) {
             ggml_free(cctx);
             throw std::runtime_error("block_runner_forward: compute failed on block " +
@@ -211,7 +219,7 @@ std::vector<float> embed_tokens(
     ggml_cgraph* graph = ggml_new_graph(cctx);
     ggml_build_forward_expand(graph, embd);
 
-    ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, 4);
+    ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, g_n_threads);
     if (status != GGML_STATUS_SUCCESS) {
         ggml_free(cctx);
         throw std::runtime_error("embed_tokens: ggml_graph_compute failed");
@@ -275,7 +283,7 @@ std::vector<float> project_to_logits(
     ggml_cgraph* graph = ggml_new_graph(cctx);
     ggml_build_forward_expand(graph, logits);
 
-    ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, 4);
+    ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, g_n_threads);
     if (status != GGML_STATUS_SUCCESS) {
         ggml_free(cctx);
         throw std::runtime_error("project_to_logits: ggml_graph_compute failed");
@@ -479,7 +487,7 @@ std::vector<float> session_forward(
         ggml_cgraph* graph = ggml_new_graph(cctx);
         ggml_build_forward_expand(graph, out);
 
-        ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, 4);
+        ggml_status status = ggml_graph_compute_with_ctx(cctx, graph, g_n_threads);
         if (status != GGML_STATUS_SUCCESS) {
             ggml_free(cctx);
             throw std::runtime_error("session_forward: compute failed at block " +

@@ -4,9 +4,13 @@
 #include <vector>
 #include "model_context.h"
 #include "block_forward.h"
+#include "vocab_context.h"
 
 static std::unordered_map<uint32_t, ModelContext*> g_handles;
 static std::atomic<uint32_t> g_next_handle{1};
+
+static std::unordered_map<uint32_t, VocabContext*> g_vocab_handles;
+static std::atomic<uint32_t> g_next_vocab_handle{1};
 
 // ── hello ─────────────────────────────────────────────────────────────────────
 Napi::String Hello(const Napi::CallbackInfo& info) {
@@ -285,8 +289,147 @@ Napi::Value SessionForward(const Napi::CallbackInfo& info) {
     }
 }
 
+// ── loadVocab ─────────────────────────────────────────────────────────────────
+Napi::Number LoadVocab(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "loadVocab(path: string)").ThrowAsJavaScriptException();
+        return {};
+    }
+    std::string path = info[0].As<Napi::String>().Utf8Value();
+    try {
+        VocabContext* vc = vocab_context_load(path.c_str());
+        if (!vc) {
+            Napi::Error::New(env, "vocab_context_load returned null").ThrowAsJavaScriptException();
+            return {};
+        }
+        uint32_t handle = g_next_vocab_handle.fetch_add(1);
+        g_vocab_handles[handle] = vc;
+        return Napi::Number::New(env, handle);
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return {};
+    }
+}
+
+// ── freeVocab ─────────────────────────────────────────────────────────────────
+Napi::Value FreeVocab(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsNumber()) return env.Undefined();
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it != g_vocab_handles.end()) {
+        vocab_context_free(it->second);
+        g_vocab_handles.erase(it);
+    }
+    return env.Undefined();
+}
+
+// ── nativeTokenize ────────────────────────────────────────────────────────────
+Napi::Value NativeTokenize(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsString() ||
+        !info[2].IsBoolean() || !info[3].IsBoolean()) {
+        Napi::TypeError::New(env,
+            "nativeTokenize(handle: number, text: string, addSpecial: boolean, parseSpecial: boolean)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it == g_vocab_handles.end()) {
+        Napi::Error::New(env, "Invalid vocab handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    std::string text   = info[1].As<Napi::String>().Utf8Value();
+    bool add_special   = info[2].As<Napi::Boolean>().Value();
+    bool parse_special = info[3].As<Napi::Boolean>().Value();
+    try {
+        std::vector<int32_t> tokens = vocab_tokenize(it->second, text, add_special, parse_special);
+        Napi::Int32Array result = Napi::Int32Array::New(env, tokens.size());
+        if (!tokens.empty()) memcpy(result.Data(), tokens.data(), tokens.size() * sizeof(int32_t));
+        return result;
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+// ── nativeTokenToPiece ────────────────────────────────────────────────────────
+Napi::Value NativeTokenToPiece(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsNumber()) {
+        Napi::TypeError::New(env,
+            "nativeTokenToPiece(handle: number, tokenId: number)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it == g_vocab_handles.end()) {
+        Napi::Error::New(env, "Invalid vocab handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    int32_t token_id = info[1].As<Napi::Number>().Int32Value();
+    try {
+        std::string piece = vocab_token_to_piece(it->second, token_id);
+        return Napi::String::New(env, piece);
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+// ── nativeApplyChatTemplate ───────────────────────────────────────────────────
+Napi::Value NativeApplyChatTemplate(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
+        Napi::TypeError::New(env,
+            "nativeApplyChatTemplate(handle: number, userMessage: string)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it == g_vocab_handles.end()) {
+        Napi::Error::New(env, "Invalid vocab handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    std::string user_message = info[1].As<Napi::String>().Utf8Value();
+    try {
+        std::string result = vocab_apply_chat_template(it->second, user_message);
+        return Napi::String::New(env, result);
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+// ── nativeGetSpecialTokens ────────────────────────────────────────────────────
+Napi::Value NativeGetSpecialTokens(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "nativeGetSpecialTokens(handle: number)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it == g_vocab_handles.end()) {
+        Napi::Error::New(env, "Invalid vocab handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    VocabSpecialTokens st = vocab_get_special_tokens(it->second);
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("bosId",     Napi::Number::New(env, st.bos_id));
+    obj.Set("eosId",     Napi::Number::New(env, st.eos_id));
+    obj.Set("eotId",     Napi::Number::New(env, st.eot_id));
+    obj.Set("vocabSize", Napi::Number::New(env, st.vocab_size));
+    return obj;
+}
+
 // ── module registration ───────────────────────────────────────────────────────
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+    llama_backend_init();
     exports.Set("hello",                 Napi::Function::New(env, Hello));
     exports.Set("loadBlockRange",        Napi::Function::New(env, LoadBlockRange));
     exports.Set("loadBlockRangeSharded", Napi::Function::New(env, LoadBlockRangeSharded));
@@ -298,6 +441,12 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("openSession",     Napi::Function::New(env, OpenSession));
     exports.Set("closeSession",    Napi::Function::New(env, CloseSession));
     exports.Set("sessionForward",  Napi::Function::New(env, SessionForward));
+    exports.Set("loadVocab",               Napi::Function::New(env, LoadVocab));
+    exports.Set("freeVocab",               Napi::Function::New(env, FreeVocab));
+    exports.Set("nativeTokenize",          Napi::Function::New(env, NativeTokenize));
+    exports.Set("nativeTokenToPiece",      Napi::Function::New(env, NativeTokenToPiece));
+    exports.Set("nativeApplyChatTemplate", Napi::Function::New(env, NativeApplyChatTemplate));
+    exports.Set("nativeGetSpecialTokens",  Napi::Function::New(env, NativeGetSpecialTokens));
     return exports;
 }
 
