@@ -7,12 +7,20 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ── Fetch llama.cpp (includes ggml and gguf) ──────────────────────────────────
 include(FetchContent)
+# Skip git update step on repeated builds (avoids cmake 4.x shallow-clone hash bug)
+set(FETCHCONTENT_UPDATES_DISCONNECTED_LLAMA ON)
 FetchContent_Declare(
   llama
   GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-  GIT_TAG        b5300
+  GIT_TAG        b8233
   GIT_SHALLOW    TRUE
   GIT_PROGRESS   TRUE
+  PATCH_COMMAND
+    ${CMAKE_COMMAND}
+      -DSOURCE_DIR=<SOURCE_DIR>
+      -DBINARY_DIR=<BINARY_DIR>
+      -DPATCH_DIR=${CMAKE_CURRENT_SOURCE_DIR}/patches
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply-once.cmake
 )
 
 # Disable llama.cpp build targets we don't need
@@ -35,8 +43,7 @@ message(STATUS "NAPI include dir: ${NAPI_INCLUDE_DIR}")
 # ── coral_native shared library (.node) ──────────────────────────────────────
 add_library(coral_native SHARED
   src/coral_napi.cpp
-  src/model_context.cpp
-  src/block_forward.cpp
+  src/llama_block_context.cpp
   src/vocab_context.cpp
   ${CMAKE_JS_SRC}
 )

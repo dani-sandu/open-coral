@@ -104,14 +104,43 @@ function TraceView({ result }: { result: InferenceResult }): React.JSX.Element {
   )
 }
 
+// ── Thinking block parser ────────────────────────────────────────────────────
+
+function parseThinking(text: string): { thinking: string | null; output: string } {
+  // Closed: <think>...</think>output
+  const closed = text.match(/^<think>([\s\S]*?)<\/think>([\s\S]*)$/)
+  if (closed) return { thinking: closed[1].trim(), output: closed[2].trim() }
+  // Still open (model still generating inside <think>)
+  const open = text.match(/^<think>([\s\S]*)$/)
+  if (open) return { thinking: open[1].trim(), output: '' }
+  return { thinking: null, output: text }
+}
+
+function ThinkingBlock({ thinking }: { thinking: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={styles.thinkBlock}>
+      <button className={styles.thinkHeader} onClick={() => setOpen(v => !v)}>
+        <span className={styles.thinkCaret}>{open ? '▾' : '▸'}</span>
+        <span>Thinking</span>
+      </button>
+      {open && (
+        <pre className={styles.thinkContent}>{thinking}</pre>
+      )}
+    </div>
+  )
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }): React.JSX.Element {
   const isUser = msg.role === 'user'
+  const { thinking, output } = msg.role === 'assistant' ? parseThinking(msg.text) : { thinking: null, output: msg.text }
   return (
     <div className={isUser ? styles.bubbleUser : styles.bubbleAssistant}>
       <div className={isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant}>
-        <div className={styles.bubbleText}>
-          {msg.text}
-        </div>
+        {thinking !== null && <ThinkingBlock thinking={thinking} />}
+        {output && (
+          <div className={styles.bubbleText}>{output}</div>
+        )}
         {msg.result && <TraceView result={msg.result} />}
         {msg.error && (
           <div className={styles.bubbleError}>{msg.error}</div>
@@ -137,7 +166,7 @@ export default function ChatPanel({
   sessions, activeSessionId, onSelectSession, onCreateSession, onUpdateSession, onDeleteSession,
 }: ChatPanelProps): React.JSX.Element {
   const [draft, setDraft] = useState('')
-  const [maxTokens, setMaxTokens] = useState(32)
+  const [maxTokens, setMaxTokens] = useState(512)
   const [sendingSessionId, setSendingSessionId] = useState<string | null>(null)
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
   const [coverageLoading, setCoverageLoading] = useState(false)
@@ -378,9 +407,9 @@ export default function ChatPanel({
               <div className={styles.maxTokensGroup}>
                 <label className={styles.maxTokensLabel}>max</label>
                 <input
-                  type="number" min={1} max={256}
+                  type="number" min={1} max={2048}
                   value={maxTokens}
-                  onChange={e => setMaxTokens(Math.max(1, Math.min(256, Number(e.target.value))))}
+                  onChange={e => setMaxTokens(Math.max(1, Math.min(2048, Number(e.target.value))))}
                   className={styles.maxTokensInput}
                 />
               </div>

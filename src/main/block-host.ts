@@ -3,13 +3,11 @@ import { randomUUID } from 'crypto'
 import { AsyncBlockRunner } from '../inference/native-worker'
 import { BlockRegistry } from '../p2p/block-registry'
 import { registerInferenceHandlerV3 } from '../p2p/inference-protocol'
-import { registerKVHandler, KVSessionClient, type KVSessionHandler } from '../p2p/kv-protocol'
-import { PipelineScheduler } from '../inference/pipeline-scheduler'
+import { registerKVHandler, type KVSessionHandler } from '../p2p/kv-protocol'
 import { getCurrentModel } from './model-manager'
-import { SequenceManager, type ChainStepWithCandidates } from '../inference/sequence-manager'
+import { SequenceManager } from '../inference/sequence-manager'
 import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
 import { loadNativeTokenizer, freeNativeTokenizer, type NativeTokenizer } from '../inference/native-tokenizer'
-import { peerIdFromString } from '@libp2p/peer-id'
 import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
 
@@ -136,21 +134,6 @@ export function setupBlockHostIPC(
     const model = getCurrentModel()
     if (!model) throw new Error('No model loaded — call opencoral:select-model first')
 
-    const REQUIRED_SUFFIXES = [
-      'attn_q.weight', 'attn_k.weight', 'attn_v.weight', 'attn_output.weight',
-      'ffn_gate.weight', 'ffn_up.weight', 'ffn_down.weight',
-    ]
-    const missing = REQUIRED_SUFFIXES.filter(s => !model.blockTensorSuffixes.includes(s))
-    if (missing.length > 0) {
-      throw new Error(
-        `Architecture "${model.architecture}" is not supported by the OpenCoral inference engine. ` +
-        `The engine currently supports llama-style models (Llama, Mistral, Qwen, Gemma, and similar) ` +
-        `that use standard separate Q/K/V attention projections. ` +
-        `This model uses a different attention mechanism (missing: ${missing.join(', ')}). ` +
-        `Please load a different model.`,
-      )
-    }
-
     const node = getNode()
     if (!node) throw new Error('P2P node not running')
 
@@ -261,8 +244,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     if (typeof prompt !== 'string' || prompt.length === 0) {
       throw new Error('prompt must be a non-empty string')
     }
-    if (!Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > 256) {
-      throw new Error(`maxTokens must be a positive integer <= 256, got ${maxTokens}`)
+    if (!Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > 2048) {
+      throw new Error(`maxTokens must be a positive integer <= 2048, got ${maxTokens}`)
     }
 
     const model = getCurrentModel()
@@ -301,7 +284,6 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const nEmbd = model.hiddenSize
 
     const t0 = Date.now()
-    const stepDurations = new Map<string, number>()
     const generatedIds: number[] = []
 
     // Tokenize prompt with chat template
@@ -310,54 +292,19 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
     const vocabSize = embedRunner.vocabSize
 
-    function stepKey(s: ChainStepWithCandidates): string {
-      return `${s.candidates[0].peerId}:${s.blockStart}-${s.blockEnd}`
-    }
-
-    // Open persistent KV sessions with all remote peers
-    const kvClients = new Map<string, KVSessionClient>()
-    const remoteSteps = chain.filter(s => s.candidates[0].peerId !== 'local')
-    for (const step of remoteSteps) {
-      const peerId = peerIdFromString(step.candidates[0].peerId)
-      const client = await KVSessionClient.open(
-        node.libp2p, peerId, randomUUID(), promptIds.length + maxTokens,
-      )
-      kvClients.set(stepKey(step), client)
-    }
-
-    // Only open a local KV session if we're hosting blocks
-    const sessionId = activeHost
-      ? await activeHost.runner.openSession(promptIds.length + maxTokens)
-      : -1
+    // shimRunner always loads the full model (block_range is informational-only in the
+    // current patch — it does not filter tensors from a single GGUF file).
+    // sessionDecodeLogits runs all transformer blocks with proper KV caching.
+    // activeHost.runner serves REMOTE peer requests via the KV protocol; it is not
+    // used in the local inference loop until true per-block shard files exist.
+    const shimSessionId = await embedRunner.openSession(promptIds.length + maxTokens)
+    let inferenceDurationMs = 0
 
     try {
-      // ── Prefill with pipeline scheduler ───────────────────────────────────
-      let current: Float32Array = await embedRunner.embedTokens(promptIds)
-
-      const scheduler = new PipelineScheduler({
-        chain,
-        nEmbd,
-        microBatchSize: 128,
-        executeStep: async (chainStep, input, nTokens) => {
-          const stepT0 = Date.now()
-          let result: Float32Array
-          if (chainStep.candidates[0].peerId === 'local') {
-            if (!activeHost) throw new Error('Local chain step but no blocks hosted')
-            result = await activeHost.runner.sessionForward(sessionId, input, nTokens)
-          } else {
-            const client = kvClients.get(stepKey(chainStep))!
-            result = await client.forward(input, nTokens, nEmbd, requestId)
-          }
-          stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
-          return result
-        },
-      })
-
-      current = await scheduler.prefill(current, promptIds.length)
-
-      // Project only the last token's hidden state to logits
-      const lastHidden = current.subarray((promptIds.length - 1) * nEmbd, promptIds.length * nEmbd)
-      let logits = await embedRunner.projectToLogits(lastHidden, 1)
+      // ── Prefill ───────────────────────────────────────────────────────────
+      const prefillT0 = Date.now()
+      let logits = await embedRunner.sessionDecodeLogits(shimSessionId, promptIds)
+      inferenceDurationMs += Date.now() - prefillT0
       let nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
 
       // ── Decode: one token at a time with KV cache ─────────────────────────
@@ -370,44 +317,21 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
           console.log(`[OpenCoral] [${requestId}] Step ${step}: token=${nextToken} text="${await tokenizer.decodeToken(nextToken)}"`)
         }
 
-        // Embed single new token
-        current = await embedRunner.embedTokens(new Int32Array([nextToken]))
-
-        // Forward single token through chain (KV cached on both local and remote)
-        for (const chainStep of chain) {
-          const stepT0 = Date.now()
-          if (chainStep.candidates[0].peerId === 'local') {
-            if (!activeHost) throw new Error('Local chain step but no blocks hosted')
-            current = await activeHost.runner.sessionForward(sessionId, current, 1)
-          } else {
-            const client = kvClients.get(stepKey(chainStep))!
-            current = await client.forward(current, 1, nEmbd, requestId)
-          }
-          stepDurations.set(stepKey(chainStep), (stepDurations.get(stepKey(chainStep)) ?? 0) + Date.now() - stepT0)
-        }
-
-        logits = await embedRunner.projectToLogits(current, 1)
+        const stepT0 = Date.now()
+        logits = await embedRunner.sessionDecodeLogits(shimSessionId, new Int32Array([nextToken]))
+        inferenceDurationMs += Date.now() - stepT0
         nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
       }
     } finally {
-      if (activeHost && sessionId >= 0) {
-        await activeHost.runner.closeSession(sessionId)
-      }
-
-      // Close remote KV sessions best-effort; host-side timeout handles dropout
-      for (const [key, client] of kvClients) {
-        client.close().catch(err => {
-          console.warn(`[OpenCoral] [${requestId}] Failed to close KV session ${key}:`, err)
-        })
-      }
+      await embedRunner.closeSession(shimSessionId)
     }
 
-    // Build chain step results from aggregated durations
-    const chainSteps = chain.map(s => ({
+    // Build chain step results (block ranges from plan, total time from inference)
+    const chainSteps = chain.map((s, i) => ({
       peerId: s.candidates[0].peerId,
       blockStart: s.blockStart,
       blockEnd: s.blockEnd,
-      durationMs: stepDurations.get(stepKey(s)) ?? 0,
+      durationMs: i === 0 ? inferenceDurationMs : 0,
     }))
 
     return {

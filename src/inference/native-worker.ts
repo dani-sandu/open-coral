@@ -165,6 +165,10 @@ export class AsyncBlockRunner {
     return this.call('sessionForward', this._handle, sessionId, input, nNewTokens) as Promise<Float32Array>
   }
 
+  sessionDecodeLogits(sessionId: number, tokenIds: Int32Array): Promise<Float32Array> {
+    return this.call('sessionDecodeLogits', this._handle, sessionId, tokenIds) as Promise<Float32Array>
+  }
+
   async dispose(): Promise<void> {
     if (this._disposed) return
     this._disposed = true

@@ -46,7 +46,7 @@ function addTensor(list: TensorDef[], name: string, ...dims: number[]) {
  * Dimension convention: dims are written in ggml column-major order where
  * ne[0] = in_features (innermost / fastest-varying dimension). For weight
  * matrices this means (in_features, out_features), e.g. attn_q is (n_embd, n_embd).
- * This matches what model_context.cpp reads via gguf_get_tensor_ne.
+ * This matches the layout that llama.cpp expects when loading GGUF tensors.
  */
 export function buildTinyGGUF(): Buffer {
   const cfg = TINY_CONFIG
@@ -78,16 +78,21 @@ export function buildTinyGGUF(): Buffer {
   w.parts.push(Buffer.from('GGUF', 'ascii'))
   w.u32(3)                          // version = 3
   w.u64(BigInt(tensors.length))     // tensor_count
-  w.u64(7n)                         // metadata_kv_count = 7
+  w.u64(11n)                        // metadata_kv_count = 11
 
   // Metadata
   w.kvStr('general.architecture',                  'llama')
+  w.kvU32('llama.context_length',                  2048)
+  w.kvU32('llama.block_count',                     cfg.n_blocks)
+  w.kvU32('llama.vocab_size',                      cfg.vocab_size)
   w.kvU32('llama.embedding_length',                cfg.n_embd)
   w.kvU32('llama.attention.head_count',            cfg.n_head)
   w.kvU32('llama.attention.head_count_kv',         cfg.n_kv_head)
   w.kvU32('llama.feed_forward_length',             cfg.n_ff)
   w.kvF32('llama.rope.freq_base',                  cfg.rope_freq_base)
   w.kvF32('llama.attention.layer_norm_rms_epsilon', cfg.rms_norm_eps)
+  // "no_vocab" tells llama.cpp to skip tokenizer loading (valid for test fixtures)
+  w.kvStr('tokenizer.ggml.model',                  'no_vocab')
 
   // Tensor info
   let offset = 0n

@@ -379,7 +379,7 @@
 }
 
 .maxTokensInput {
-  width: 44px;
+  width: 54px;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
@@ -395,6 +395,52 @@
   font-size: var(--fs-sm);
   color: var(--red);
   margin-top: 6px;
+}
+
+/* ── Model thinking block ─────────────────────────────────────────────────── */
+
+.thinkBlock {
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.thinkHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  border: none;
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+  color: var(--dim);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  text-align: left;
+}
+
+.thinkHeader:hover {
+  color: var(--text);
+}
+
+.thinkCaret {
+  font-size: 9px;
+  color: var(--accent);
+}
+
+.thinkContent {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  color: var(--dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 15%, var(--border));
+  background: var(--bg);
 }
 
 /* ── Thinking indicator ───────────────────────────────────────────────────── */

@@ -74,6 +74,13 @@ export class BlockRunner {
    */
   projectToLogits(hidden: Float32Array, nTokens: number): Float32Array {
     if (this._disposed) throw new Error('BlockRunner has been disposed')
+    const expected = nTokens * this.hiddenSize
+    if (hidden.length !== expected) {
+      throw new Error(
+        `Input length ${hidden.length} does not match expected ${expected} ` +
+        `(${nTokens} tokens × ${this.hiddenSize} hidden size)`
+      )
+    }
     return getNative().projectToLogits(this._handle, hidden, nTokens)
   }
 
@@ -98,7 +105,26 @@ export class BlockRunner {
   /** Forward pass with KV caching — only processes nNewTokens new tokens. */
   sessionForward(sessionId: number, input: Float32Array, nNewTokens: number): Float32Array {
     if (this._disposed) throw new Error('BlockRunner has been disposed')
+    const expected = nNewTokens * this.hiddenSize
+    if (input.length !== expected) {
+      throw new Error(
+        `Input length ${input.length} does not match expected ${expected} ` +
+        `(${nNewTokens} tokens × ${this.hiddenSize} hidden size)`
+      )
+    }
     return getNative().sessionForward(this._handle, sessionId, input, nNewTokens)
+  }
+
+  /**
+   * KV-cached full-model decode: token IDs → logits for the last token.
+   * Only valid on shim contexts (blockEnd === -1) that carry the full model.
+   * Accumulates KV state across calls within the same session.
+   *
+   * @returns Float32Array of length vocabSize
+   */
+  sessionDecodeLogits(sessionId: number, tokenIds: Int32Array): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().sessionDecodeLogits(this._handle, sessionId, tokenIds)
   }
 
   /** Release native resources. Safe to call multiple times. */
