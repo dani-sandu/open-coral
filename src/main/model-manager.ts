@@ -311,6 +311,7 @@ export function listLocalModels(): LocalModelEntry[] {
   const ggufFiles = readdirSync(dir).filter(f => {
     if (!f.endsWith('.gguf')) return false
     if (/\d{5}-of-\d{5}\.gguf$/i.test(f)) return false
+    if (/\.shim\.gguf$/i.test(f)) return false
     return true
   })
 

@@ -10,7 +10,7 @@ static const int g_n_threads = [] {
     return std::max(1, hw > 2 ? hw - 2 : 1);
 }();
 
-static constexpr int LBC_DEFAULT_CTX = 4096;
+static constexpr int LBC_DEFAULT_CTX = 8192;
 
 static LlamaBlockContext* lbc_load_internal(
         const char** paths, int n_shards,
@@ -196,6 +196,13 @@ std::vector<float> lbc_forward(
 }
 
 int lbc_session_open(LlamaBlockContext* lbc, int max_seq_len) {
+    // Clamp to actual KV cache size so callers can't request more than n_ctx.
+    const int n_ctx = (int)llama_n_ctx(lbc->ctx);
+    if (max_seq_len > n_ctx) {
+        fprintf(stderr, "lbc_session_open: clamping max_seq_len %d -> n_ctx %d\n", max_seq_len, n_ctx);
+        max_seq_len = n_ctx;
+    }
+
     // seq 0 is reserved for stateless calls; sessions use seq_ids 1..(n_seq_max-1).
     // n_seq_max is set to 64 at context creation, so max 63 concurrent sessions.
     static constexpr int MAX_SESSIONS = 63;

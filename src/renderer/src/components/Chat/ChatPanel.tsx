@@ -137,7 +137,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }): React.JSX.Element {
   return (
     <div className={isUser ? styles.bubbleUser : styles.bubbleAssistant}>
       <div className={isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant}>
-        {thinking !== null && <ThinkingBlock thinking={thinking} />}
+        {thinking !== null && thinking !== '' && <ThinkingBlock thinking={thinking} />}
         {output && (
           <div className={styles.bubbleText}>{output}</div>
         )}
