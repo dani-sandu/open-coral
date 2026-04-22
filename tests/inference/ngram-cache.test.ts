@@ -53,4 +53,20 @@ describe('NgramCache', () => {
     const drafts = cache.lookup([0, 0, 1, 2, 3])
     expect(drafts).toEqual([4, 5])
   })
+
+  it('constructor defaults to ngramSize=4, draftMax=5', () => {
+    const cache = new NgramCache()
+    cache.buildFromTokens([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    const drafts = cache.lookup([1, 2, 3, 4])
+    expect(drafts).toEqual([5, 6, 7, 8, 9])
+  })
+
+  it('two distinct n-grams produce distinct lookup results', () => {
+    const cache = new NgramCache(2, 3)
+    cache.buildFromTokens([10, 20, 100, 101, 102, 30, 40, 200, 201, 202])
+    const drafts1 = cache.lookup([10, 20])
+    const drafts2 = cache.lookup([30, 40])
+    expect(drafts1).toEqual([100, 101, 102])
+    expect(drafts2).toEqual([200, 201, 202])
+  })
 })

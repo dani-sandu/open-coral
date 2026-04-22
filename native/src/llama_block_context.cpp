@@ -396,16 +396,35 @@ std::vector<float> lbc_project_to_logits_all(
     const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(lbc->model));
     const int32_t n_embd  = llama_model_n_embd(lbc->model);
 
-    // Project one token at a time via the working single-output path.
-    // llama_project_hidden_to_logits crashes when batch.logits flags multiple
-    // outputs due to a graph scheduler reservation mismatch in the projection-only
-    // graph (no layers, just norm + lm_head). Per-token projection avoids this
-    // and the overhead is negligible — norm + lm_head is cheap vs. transformer layers.
-    std::vector<float> result;
-    result.reserve((size_t)n_tokens * n_vocab);
+    llama_memory_seq_rm(llama_get_memory(lbc->ctx), 0, -1, -1);
+
+    llama_batch batch = llama_batch_init(n_tokens, 0, 1);
     for (int i = 0; i < n_tokens; i++) {
-        auto logits = lbc_project_to_logits(lbc, hidden + (size_t)i * n_embd, 1);
-        result.insert(result.end(), logits.begin(), logits.end());
+        batch.token[i]     = 0;
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]    = 1;  // request logits for all positions
     }
-    return result;
+    batch.n_tokens = n_tokens;
+
+    int rc = llama_project_hidden_to_logits(lbc->ctx, batch, hidden);
+    llama_batch_free(batch);
+
+    if (rc != 0) {
+        // Graph scheduler reservation mismatch in the projection-only graph
+        // when multiple logit outputs are requested — fall back to per-token projection.
+        std::vector<float> result;
+        result.reserve((size_t)n_tokens * n_vocab);
+        for (int i = 0; i < n_tokens; i++) {
+            auto logits = lbc_project_to_logits(lbc, hidden + (size_t)i * n_embd, 1);
+            result.insert(result.end(), logits.begin(), logits.end());
+        }
+        return result;
+    }
+
+    const float* raw = llama_get_logits(lbc->ctx);
+    if (!raw)
+        throw std::runtime_error("lbc_project_to_logits_all: llama_get_logits returned null");
+    return std::vector<float>(raw, raw + (size_t)n_tokens * n_vocab);
 }

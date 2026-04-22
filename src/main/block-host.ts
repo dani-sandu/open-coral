@@ -10,7 +10,7 @@ import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
 import { loadNativeTokenizer, freeNativeTokenizer, type NativeTokenizer } from '../inference/native-tokenizer'
 import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
-import { NgramCache } from '../inference/ngram-cache'
+import { SpeculativeSession, LocalVerificationBackend, DEFAULT_SPEC_CONFIG, type GenerateResult } from '../inference/speculative-session'
 
 export interface HostingState {
   modelPath: string
@@ -55,10 +55,6 @@ let cachedTokenizer: NativeTokenizer | null = null
 // Used for embedTokens() and projectToLogits() when the user is not hosting blocks.
 let shimRunner: AsyncBlockRunner | null = null
 
-// ── Speculative decoding config ──────────────────────────────────────────────
-const SPEC_ENABLED = true
-const SPEC_NGRAM_SIZE = 12
-const SPEC_DRAFT_MAX = 5
 
 export async function loadShimRunner(shimPath: string, totalBlocks: number, hiddenSize: number): Promise<void> {
   if (shimRunner) {
@@ -87,46 +83,6 @@ export async function disposeShimRunner(): Promise<void> {
 
 export function getShimRunner(): AsyncBlockRunner | null {
   return shimRunner
-}
-
-/**
- * Sample a token from logits using temperature scaling and top-k filtering.
- * Returns the sampled token index.
- */
-function sampleTopK(
-  logits: Float32Array,
-  vocabSize: number,
-  offset: number,
-  temperature: number = 0.7,
-  topK: number = 40,
-): number {
-  // Build (index, logit) pairs for this token position
-  const candidates: { idx: number; logit: number }[] = []
-  for (let i = 0; i < vocabSize; i++) {
-    candidates.push({ idx: i, logit: logits[offset + i] })
-  }
-
-  // Sort descending by logit
-  candidates.sort((a, b) => b.logit - a.logit)
-
-  // Keep only top-k
-  const topCandidates = candidates.slice(0, topK)
-
-  // Apply temperature and compute softmax
-  const scaled = topCandidates.map(c => c.logit / temperature)
-  const maxVal = scaled[0]
-  const exps = scaled.map(v => Math.exp(v - maxVal))
-  const sum = exps.reduce((a, b) => a + b, 0)
-  const probs = exps.map(e => e / sum)
-
-  // Sample from the distribution
-  const r = Math.random()
-  let cumulative = 0
-  for (let i = 0; i < probs.length; i++) {
-    cumulative += probs[i]
-    if (r <= cumulative) return topCandidates[i].idx
-  }
-  return topCandidates[topCandidates.length - 1].idx
 }
 
 // ── Block hosting IPC ─────────────────────────────────────────────────────────
@@ -212,6 +168,13 @@ export function setupBlockHostIPC(
         if (!entry) throw new Error(`KV session not found: ${sessionId}`)
         entry.lastUsed = Date.now()
         await runner.sessionRollback(entry.sessionId, newNPast)
+      },
+
+      async onForwardAll(sessionId, input, nTokens, _nEmbd) {
+        const entry = kvSessions.get(sessionId)
+        if (!entry) throw new Error(`KV session not found: ${sessionId}`)
+        entry.lastUsed = Date.now()
+        return runner.projectToLogitsAll(input, nTokens)
       },
     }
 
@@ -300,120 +263,30 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const nEmbd = model.hiddenSize
 
     const t0 = Date.now()
-    const generatedIds: number[] = []
 
     // Tokenize prompt with chat template
     const promptIds = await tokenizer.encodeChat(prompt)
     console.log(`[OpenCoral] [${requestId}] Prompt tokens (${promptIds.length})`)
 
-    const vocabSize = embedRunner.vocabSize
-
-    // shimRunner always loads the full model (block_range is informational-only in the
-    // current patch — it does not filter tensors from a single GGUF file).
-    // sessionDecodeLogits runs all transformer blocks with proper KV caching.
-    // activeHost.runner serves REMOTE peer requests via the KV protocol; it is not
-    // used in the local inference loop until true per-block shard files exist.
     const shimSessionId = await embedRunner.openSession(promptIds.length + maxTokens)
     let inferenceDurationMs = 0
-
-    let specDraftTokens = 0
-    let specAcceptedTokens = 0
+    let genResult: GenerateResult = { tokenIds: [], specDraftTokens: 0, specAcceptedTokens: 0 }
 
     try {
-      // ── Prefill ───────────────────────────────────────────────────────────
-      const prefillT0 = Date.now()
-      let logits = await embedRunner.sessionDecodeLogits(shimSessionId, promptIds)
-      inferenceDurationMs += Date.now() - prefillT0
-      let nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
+      const backend = new LocalVerificationBackend(embedRunner, shimSessionId)
+      const session = new SpeculativeSession(
+        backend,
+        tokenizer.eosTokenId,
+        tokenizer.endOfTurnTokenId,
+        DEFAULT_SPEC_CONFIG,
+      )
+      const t1 = Date.now()
+      genResult = await session.generate(new Int32Array(promptIds), maxTokens)
+      inferenceDurationMs = Date.now() - t1
 
-      // Build n-gram cache from prompt tokens
-      const allTokens: number[] = Array.from(promptIds)
-      const ngramCache = new NgramCache(SPEC_NGRAM_SIZE, SPEC_DRAFT_MAX)
-      if (SPEC_ENABLED) {
-        ngramCache.buildFromTokens(allTokens)
-      }
-
-      // Track KV cache position for rollback (prefill consumed promptIds.length tokens)
-      let kvPosition = promptIds.length
-
-      // ── Decode with speculative drafting ──────────────────────────────────
-      let totalGenerated = 0
-      while (totalGenerated < maxTokens) {
-        if (nextToken === tokenizer.eosTokenId) break
-        if (tokenizer.endOfTurnTokenId !== undefined && nextToken === tokenizer.endOfTurnTokenId) break
-
-        // Try to draft tokens from n-gram cache
-        const context = [...allTokens, nextToken]
-        const draftTokens = SPEC_ENABLED ? ngramCache.lookup(context) : []
-
-        if (draftTokens.length === 0) {
-          // ── No draft: single-token path (unchanged behavior) ────────────
-          generatedIds.push(nextToken)
-          allTokens.push(nextToken)
-          if (SPEC_ENABLED) ngramCache.addToken(nextToken, allTokens)
-          totalGenerated++
-
-          if (totalGenerated <= 5) {
-            console.log(`[OpenCoral] [${requestId}] Step ${totalGenerated}: token=${nextToken} text="${await tokenizer.decodeToken(nextToken)}"`)
-          }
-
-          const stepT0 = Date.now()
-          logits = await embedRunner.sessionDecodeLogits(shimSessionId, new Int32Array([nextToken]))
-          inferenceDurationMs += Date.now() - stepT0
-          kvPosition++
-          nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
-        } else {
-          // ── Speculative path: draft + verify ────────────────────────────
-          // Cap drafts to remaining budget
-          const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
-          const batch = new Int32Array(1 + maxDrafts)
-          batch[0] = nextToken
-          for (let i = 0; i < maxDrafts; i++) batch[i + 1] = draftTokens[i]
-
-          specDraftTokens += maxDrafts
-
-          const stepT0 = Date.now()
-          const allLogits = await embedRunner.sessionDecodeLogitsAll(shimSessionId, batch)
-          inferenceDurationMs += Date.now() - stepT0
-          kvPosition += batch.length
-
-          // Verify each draft token
-          let accepted = 0
-          generatedIds.push(nextToken)
-          allTokens.push(nextToken)
-          if (SPEC_ENABLED) ngramCache.addToken(nextToken, allTokens)
-          totalGenerated++
-
-          for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
-            const targetToken = sampleTopK(allLogits, vocabSize, i * vocabSize, 0.7, 40)
-            if (targetToken === draftTokens[i]) {
-              // Draft accepted
-              accepted++
-              specAcceptedTokens++
-              generatedIds.push(draftTokens[i])
-              allTokens.push(draftTokens[i])
-              if (SPEC_ENABLED) ngramCache.addToken(draftTokens[i], allTokens)
-              totalGenerated++
-
-              if (draftTokens[i] === tokenizer.eosTokenId) break
-              if (tokenizer.endOfTurnTokenId !== undefined && draftTokens[i] === tokenizer.endOfTurnTokenId) break
-            } else {
-              // Draft rejected — sample correct token from this position
-              // and rollback KV cache past accepted tokens
-              const rollbackTo = kvPosition - (maxDrafts - accepted)
-              await embedRunner.sessionRollback(shimSessionId, rollbackTo)
-              kvPosition = rollbackTo
-
-              nextToken = targetToken
-              break
-            }
-          }
-
-          if (accepted === maxDrafts) {
-            // All drafts accepted — sample next token from last position's logits
-            nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, 0.7, 40)
-          }
-        }
+      if (genResult.specDraftTokens > 0) {
+        const rate = (genResult.specAcceptedTokens / genResult.specDraftTokens * 100).toFixed(1)
+        console.log(`[OpenCoral] [${requestId}] Spec decoding: ${genResult.specAcceptedTokens}/${genResult.specDraftTokens} accepted (${rate}%)`)
       }
     } finally {
       await embedRunner.closeSession(shimSessionId)
@@ -427,21 +300,18 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       durationMs: i === 0 ? inferenceDurationMs : 0,
     }))
 
-    const specAcceptanceRate = specDraftTokens > 0 ? specAcceptedTokens / specDraftTokens : 0
-    if (specDraftTokens > 0) {
-      console.log(`[OpenCoral] [${requestId}] Speculative decoding: ${specAcceptedTokens}/${specDraftTokens} accepted (${(specAcceptanceRate * 100).toFixed(1)}%)`)
-    }
-
     return {
       prompt,
-      generatedText: await tokenizer.decode(generatedIds),
-      generatedTokens: generatedIds.length,
+      generatedText: await tokenizer.decode(genResult.tokenIds),
+      generatedTokens: genResult.tokenIds.length,
       nEmbd,
       chainSteps,
       totalDurationMs: Date.now() - t0,
-      specDraftTokens: specDraftTokens || undefined,
-      specAcceptedTokens: specAcceptedTokens || undefined,
-      specAcceptanceRate: specDraftTokens > 0 ? specAcceptanceRate : undefined,
+      specDraftTokens: genResult.specDraftTokens || undefined,
+      specAcceptedTokens: genResult.specAcceptedTokens || undefined,
+      specAcceptanceRate: genResult.specDraftTokens > 0
+        ? genResult.specAcceptedTokens / genResult.specDraftTokens
+        : undefined,
     }
   })
 }

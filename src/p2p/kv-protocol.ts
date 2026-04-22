@@ -14,6 +14,7 @@ const MSG_OPEN    = 0x01
 const MSG_FORWARD = 0x02
 const MSG_CLOSE     = 0x03
 const MSG_ROLLBACK  = 0x04
+const MSG_FORWARD_ALL = 0x05
 const STATUS_OK   = 0x00
 const STATUS_ERR  = 0x01
 
@@ -25,6 +26,9 @@ export interface KVSessionHandler {
   onForward(sessionId: string, input: Float32Array, nTokens: number, nEmbd: number, requestId?: string): Promise<Float32Array>
   onClose(sessionId: string): Promise<void>
   onRollback?(sessionId: string, newNPast: number): Promise<void>
+  /** Batch logit retrieval for speculative decoding verification. Returns nTokens × vocabSize floats.
+   *  requestId is intentionally omitted — batch calls are not individually traced. */
+  onForwardAll?(sessionId: string, input: Float32Array, nTokens: number, nEmbd: number): Promise<Float32Array>
 }
 
 // ── Writing helpers ──────────────────────────────────────────────────────────
@@ -135,6 +139,23 @@ export async function registerKVHandler(libp2p: Libp2p, handler: KVSessionHandle
             await handler.onRollback(json.sessionId as string, json.newNPast as number)
           }
           await writeResponse(stream, STATUS_OK, Buffer.from('{"ok":true}', 'utf-8'), false)
+        } else if (msgType === MSG_FORWARD_ALL) {
+          const jsonLen = payload.readUInt32LE(0)
+          const json = JSON.parse(payload.slice(4, 4 + jsonLen).toString('utf-8'))
+          const { sessionId, nTokens, nEmbd } = json
+          const tensorBytes = payload.slice(4 + jsonLen)
+          const alignedBuf = Buffer.allocUnsafe(tensorBytes.byteLength)
+          tensorBytes.copy(alignedBuf, 0)
+          const input = new Float32Array(alignedBuf.buffer, 0, tensorBytes.byteLength / 4)
+          if (!handler.onForwardAll) {
+            await writeResponse(stream, STATUS_ERR, Buffer.from('onForwardAll not implemented', 'utf-8'), false)
+            break
+          } else {
+            const output = await handler.onForwardAll(sessionId, input, nTokens, nEmbd)
+            const tensorOut = Buffer.from(output.buffer, output.byteOffset, output.byteLength)
+            const useChunked = tensorOut.byteLength > DEFAULT_CHUNK_SIZE
+            await writeResponse(stream, STATUS_OK, tensorOut, useChunked)
+          }
         } else {
           await writeResponse(stream, STATUS_ERR, Buffer.from(`Unknown msg type: ${msgType}`, 'utf-8'), false)
           break
@@ -208,6 +229,32 @@ export class KVSessionClient {
     const respPayload = await readPayload(this.reader, flags)
 
     if (status === STATUS_ERR) throw new Error(`KV forward failed: ${respPayload.toString('utf-8')}`)
+
+    const alignedBuf = Buffer.allocUnsafe(respPayload.byteLength)
+    respPayload.copy(alignedBuf, 0)
+    return new Float32Array(alignedBuf.buffer, 0, respPayload.byteLength / 4)
+  }
+
+  async forwardAll(input: Float32Array, nTokens: number, nEmbd: number): Promise<Float32Array> {
+    const jsonObj = { sessionId: this.sessionId, nTokens, nEmbd }
+    const jsonBytes = Buffer.from(JSON.stringify(jsonObj), 'utf-8')
+    const jsonLenBuf = Buffer.allocUnsafe(4)
+    jsonLenBuf.writeUInt32LE(jsonBytes.byteLength, 0)
+    const tensorBuf = Buffer.from(input.buffer, input.byteOffset, input.byteLength)
+    const payload = Buffer.concat([jsonLenBuf, jsonBytes, tensorBuf])
+
+    const useChunked = payload.byteLength > DEFAULT_CHUNK_SIZE
+    if (useChunked) {
+      await writeChunkedMessage(this.stream, MSG_FORWARD_ALL, payload)
+    } else {
+      await writeRawMessage(this.stream, MSG_FORWARD_ALL, payload)
+    }
+
+    const status = await this.reader.readUint8()
+    const flags = await this.reader.readUint8()
+    const respPayload = await readPayload(this.reader, flags)
+
+    if (status === STATUS_ERR) throw new Error(`KV forwardAll failed: ${respPayload.toString('utf-8')}`)
 
     const alignedBuf = Buffer.allocUnsafe(respPayload.byteLength)
     respPayload.copy(alignedBuf, 0)
