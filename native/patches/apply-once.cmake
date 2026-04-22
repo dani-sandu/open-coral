@@ -337,7 +337,14 @@ coral_replace("src/models/llama.cpp"
         cb(cur, \"result_output\", -1);
         res->t_logits = cur;
     }"
-  "    if (!coral_skip_norm) {
+  "    // [open-coral] When all layers are skipped (projection-only mode), the output-id
+    // gather that normally fires at il == il_end - 1 inside the layer loop never runs.
+    // Apply it here so norm + lm_head operate on the correct (n_outputs) tensor shape.
+    if (il_start >= il_end && inp_out_ids) {
+        cur = ggml_get_rows(ctx0, cur, inp_out_ids);
+    }
+
+    if (!coral_skip_norm) {
         cur = build_norm(cur,
                 model.output_norm, NULL,
                 LLM_NORM_RMS, -1);

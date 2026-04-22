@@ -346,6 +346,108 @@ Napi::Value SessionDecodeLogits(const Napi::CallbackInfo& info) {
     }
 }
 
+// ── sessionDecodeLogitsAll ───────────────────────────────────────────────────
+Napi::Value SessionDecodeLogitsAll(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsTypedArray()) {
+        Napi::TypeError::New(env,
+            "sessionDecodeLogitsAll(handle, sessionId, tokenIds: Int32Array)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    int sid         = info[1].As<Napi::Number>().Int32Value();
+    auto it = g_handles.find(handle);
+    if (it == g_handles.end()) {
+        Napi::Error::New(env, "Invalid handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    auto ta = info[2].As<Napi::TypedArray>();
+    if (ta.TypedArrayType() != napi_int32_array) {
+        Napi::TypeError::New(env, "tokenIds must be Int32Array").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    const int32_t* ids = ta.As<Napi::Int32Array>().Data();
+    int n_tokens = (int)ta.ElementLength();
+    try {
+        std::vector<float> output = lbc_session_decode_logits_all(it->second, sid, ids, n_tokens);
+        Napi::Float32Array result = Napi::Float32Array::New(env, output.size());
+        if (!output.empty()) memcpy(result.Data(), output.data(), output.size() * sizeof(float));
+        return result;
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+// ── sessionRollback ──────────────────────────────────────────────────────────
+Napi::Value SessionRollback(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber()) {
+        Napi::TypeError::New(env,
+            "sessionRollback(handle, sessionId, newNPast)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    int sid         = info[1].As<Napi::Number>().Int32Value();
+    int newNPast    = info[2].As<Napi::Number>().Int32Value();
+    auto it = g_handles.find(handle);
+    if (it == g_handles.end()) {
+        Napi::Error::New(env, "Invalid handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    try {
+        lbc_session_rollback(it->second, sid, newNPast);
+        return env.Undefined();
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+// ── projectToLogitsAll ───────────────────────────────────────────────────────
+Napi::Value ProjectToLogitsAll(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsNumber() ||
+        !info[1].IsTypedArray() || !info[2].IsNumber()) {
+        Napi::TypeError::New(env,
+            "projectToLogitsAll(handle: number, hidden: Float32Array, nTokens: number)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    int n_tokens = info[2].As<Napi::Number>().Int32Value();
+    auto it = g_handles.find(handle);
+    if (it == g_handles.end()) {
+        Napi::Error::New(env, "Invalid handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    auto ta = info[1].As<Napi::TypedArray>();
+    if (ta.TypedArrayType() != napi_float32_array) {
+        Napi::TypeError::New(env, "hidden must be Float32Array").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    int32_t n_embd_proj = llama_model_n_embd(it->second->model);
+    if ((int)ta.ElementLength() < n_tokens * n_embd_proj) {
+        Napi::RangeError::New(env,
+            "Input Float32Array too small: expected " + std::to_string(n_tokens * n_embd_proj) +
+            " elements, got " + std::to_string(ta.ElementLength())
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    const float* hidden_ptr = ta.As<Napi::Float32Array>().Data();
+    try {
+        std::vector<float> output = lbc_project_to_logits_all(it->second, hidden_ptr, n_tokens);
+        Napi::Float32Array result = Napi::Float32Array::New(env, output.size());
+        if (!output.empty()) memcpy(result.Data(), output.data(), output.size() * sizeof(float));
+        return result;
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
 // ── loadVocab ─────────────────────────────────────────────────────────────────
 Napi::Number LoadVocab(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -498,7 +600,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("openSession",     Napi::Function::New(env, OpenSession));
     exports.Set("closeSession",    Napi::Function::New(env, CloseSession));
     exports.Set("sessionForward",        Napi::Function::New(env, SessionForward));
-    exports.Set("sessionDecodeLogits",   Napi::Function::New(env, SessionDecodeLogits));
+    exports.Set("sessionDecodeLogits",      Napi::Function::New(env, SessionDecodeLogits));
+    exports.Set("sessionDecodeLogitsAll",  Napi::Function::New(env, SessionDecodeLogitsAll));
+    exports.Set("sessionRollback",         Napi::Function::New(env, SessionRollback));
+    exports.Set("projectToLogitsAll",      Napi::Function::New(env, ProjectToLogitsAll));
     exports.Set("loadVocab",               Napi::Function::New(env, LoadVocab));
     exports.Set("freeVocab",               Napi::Function::New(env, FreeVocab));
     exports.Set("nativeTokenize",          Napi::Function::New(env, NativeTokenize));

@@ -127,6 +127,41 @@ export class BlockRunner {
     return getNative().sessionDecodeLogits(this._handle, sessionId, tokenIds)
   }
 
+  /**
+   * KV-cached full-model decode: token IDs → logits for ALL tokens.
+   * Returns Float32Array of length nTokens × vocabSize.
+   * Only valid on shim contexts (blockEnd === -1).
+   */
+  sessionDecodeLogitsAll(sessionId: number, tokenIds: Int32Array): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    return getNative().sessionDecodeLogitsAll(this._handle, sessionId, tokenIds)
+  }
+
+  /**
+   * Roll back a session's KV cache to a previous position.
+   * Trims all KV entries from newNPast onward.
+   */
+  sessionRollback(sessionId: number, newNPast: number): void {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    getNative().sessionRollback(this._handle, sessionId, newNPast)
+  }
+
+  /**
+   * Project hidden states to logits for ALL token positions.
+   * Returns Float32Array of length nTokens × vocabSize.
+   */
+  projectToLogitsAll(hidden: Float32Array, nTokens: number): Float32Array {
+    if (this._disposed) throw new Error('BlockRunner has been disposed')
+    const expected = nTokens * this.hiddenSize
+    if (hidden.length !== expected) {
+      throw new Error(
+        `Input length ${hidden.length} does not match expected ${expected} ` +
+        `(${nTokens} tokens × ${this.hiddenSize} hidden size)`
+      )
+    }
+    return getNative().projectToLogitsAll(this._handle, hidden, nTokens)
+  }
+
   /** Release native resources. Safe to call multiple times. */
   dispose(): void {
     if (!this._disposed) {

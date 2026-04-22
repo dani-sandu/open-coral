@@ -47,6 +47,9 @@ export interface InferenceResult {
   nEmbd: number
   chainSteps: { peerId: string; blockStart: number; blockEnd: number; durationMs: number }[]
   totalDurationMs: number
+  specDraftTokens?: number
+  specAcceptedTokens?: number
+  specAcceptanceRate?: number
 }
 
 export interface ChatMessage {

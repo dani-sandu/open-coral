@@ -10,6 +10,7 @@ import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
 import { loadNativeTokenizer, freeNativeTokenizer, type NativeTokenizer } from '../inference/native-tokenizer'
 import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
+import { NgramCache } from '../inference/ngram-cache'
 
 export interface HostingState {
   modelPath: string
@@ -34,6 +35,9 @@ export interface InferenceResult {
     durationMs: number
   }[]
   totalDurationMs: number
+  specDraftTokens?: number
+  specAcceptedTokens?: number
+  specAcceptanceRate?: number
 }
 
 interface ActiveHost {
@@ -50,6 +54,11 @@ let cachedTokenizer: NativeTokenizer | null = null
 // Loaded from a shim GGUF (embed + output tensors, no blocks).
 // Used for embedTokens() and projectToLogits() when the user is not hosting blocks.
 let shimRunner: AsyncBlockRunner | null = null
+
+// ── Speculative decoding config ──────────────────────────────────────────────
+const SPEC_ENABLED = true
+const SPEC_NGRAM_SIZE = 12
+const SPEC_DRAFT_MAX = 5
 
 export async function loadShimRunner(shimPath: string, totalBlocks: number, hiddenSize: number): Promise<void> {
   if (shimRunner) {
@@ -197,6 +206,13 @@ export function setupBlockHostIPC(
         runner.closeSession(entry.sessionId).catch(() => {})
         kvSessions.delete(sessionId)
       },
+
+      async onRollback(sessionId, newNPast) {
+        const entry = kvSessions.get(sessionId)
+        if (!entry) throw new Error(`KV session not found: ${sessionId}`)
+        entry.lastUsed = Date.now()
+        await runner.sessionRollback(entry.sessionId, newNPast)
+      },
     }
 
     await registerKVHandler(node.libp2p, kvHandler)
@@ -300,6 +316,9 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     const shimSessionId = await embedRunner.openSession(promptIds.length + maxTokens)
     let inferenceDurationMs = 0
 
+    let specDraftTokens = 0
+    let specAcceptedTokens = 0
+
     try {
       // ── Prefill ───────────────────────────────────────────────────────────
       const prefillT0 = Date.now()
@@ -307,20 +326,94 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       inferenceDurationMs += Date.now() - prefillT0
       let nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
 
-      // ── Decode: one token at a time with KV cache ─────────────────────────
-      for (let step = 0; step < maxTokens; step++) {
+      // Build n-gram cache from prompt tokens
+      const allTokens: number[] = Array.from(promptIds)
+      const ngramCache = new NgramCache(SPEC_NGRAM_SIZE, SPEC_DRAFT_MAX)
+      if (SPEC_ENABLED) {
+        ngramCache.buildFromTokens(allTokens)
+      }
+
+      // Track KV cache position for rollback (prefill consumed promptIds.length tokens)
+      let kvPosition = promptIds.length
+
+      // ── Decode with speculative drafting ──────────────────────────────────
+      let totalGenerated = 0
+      while (totalGenerated < maxTokens) {
         if (nextToken === tokenizer.eosTokenId) break
         if (tokenizer.endOfTurnTokenId !== undefined && nextToken === tokenizer.endOfTurnTokenId) break
 
-        generatedIds.push(nextToken)
-        if (step < 5) {
-          console.log(`[OpenCoral] [${requestId}] Step ${step}: token=${nextToken} text="${await tokenizer.decodeToken(nextToken)}"`)
-        }
+        // Try to draft tokens from n-gram cache
+        const context = [...allTokens, nextToken]
+        const draftTokens = SPEC_ENABLED ? ngramCache.lookup(context) : []
 
-        const stepT0 = Date.now()
-        logits = await embedRunner.sessionDecodeLogits(shimSessionId, new Int32Array([nextToken]))
-        inferenceDurationMs += Date.now() - stepT0
-        nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
+        if (draftTokens.length === 0) {
+          // ── No draft: single-token path (unchanged behavior) ────────────
+          generatedIds.push(nextToken)
+          allTokens.push(nextToken)
+          if (SPEC_ENABLED) ngramCache.addToken(nextToken, allTokens)
+          totalGenerated++
+
+          if (totalGenerated <= 5) {
+            console.log(`[OpenCoral] [${requestId}] Step ${totalGenerated}: token=${nextToken} text="${await tokenizer.decodeToken(nextToken)}"`)
+          }
+
+          const stepT0 = Date.now()
+          logits = await embedRunner.sessionDecodeLogits(shimSessionId, new Int32Array([nextToken]))
+          inferenceDurationMs += Date.now() - stepT0
+          kvPosition++
+          nextToken = sampleTopK(logits, vocabSize, 0, 0.7, 40)
+        } else {
+          // ── Speculative path: draft + verify ────────────────────────────
+          // Cap drafts to remaining budget
+          const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
+          const batch = new Int32Array(1 + maxDrafts)
+          batch[0] = nextToken
+          for (let i = 0; i < maxDrafts; i++) batch[i + 1] = draftTokens[i]
+
+          specDraftTokens += maxDrafts
+
+          const stepT0 = Date.now()
+          const allLogits = await embedRunner.sessionDecodeLogitsAll(shimSessionId, batch)
+          inferenceDurationMs += Date.now() - stepT0
+          kvPosition += batch.length
+
+          // Verify each draft token
+          let accepted = 0
+          generatedIds.push(nextToken)
+          allTokens.push(nextToken)
+          if (SPEC_ENABLED) ngramCache.addToken(nextToken, allTokens)
+          totalGenerated++
+
+          for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
+            const targetToken = sampleTopK(allLogits, vocabSize, i * vocabSize, 0.7, 40)
+            if (targetToken === draftTokens[i]) {
+              // Draft accepted
+              accepted++
+              specAcceptedTokens++
+              generatedIds.push(draftTokens[i])
+              allTokens.push(draftTokens[i])
+              if (SPEC_ENABLED) ngramCache.addToken(draftTokens[i], allTokens)
+              totalGenerated++
+
+              if (draftTokens[i] === tokenizer.eosTokenId) break
+              if (tokenizer.endOfTurnTokenId !== undefined && draftTokens[i] === tokenizer.endOfTurnTokenId) break
+            } else {
+              // Draft rejected — sample correct token from this position
+              // and rollback KV cache past accepted tokens
+              const rollbackTo = kvPosition - (maxDrafts - accepted)
+              await embedRunner.sessionRollback(shimSessionId, rollbackTo)
+              kvPosition = rollbackTo
+
+              nextToken = targetToken
+              break
+            }
+          }
+
+          if (accepted === maxDrafts) {
+            // All drafts accepted — sample next token from last position's logits
+            nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, 0.7, 40)
+          }
+        }
       }
     } finally {
       await embedRunner.closeSession(shimSessionId)
@@ -334,6 +427,11 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       durationMs: i === 0 ? inferenceDurationMs : 0,
     }))
 
+    const specAcceptanceRate = specDraftTokens > 0 ? specAcceptedTokens / specDraftTokens : 0
+    if (specDraftTokens > 0) {
+      console.log(`[OpenCoral] [${requestId}] Speculative decoding: ${specAcceptedTokens}/${specDraftTokens} accepted (${(specAcceptanceRate * 100).toFixed(1)}%)`)
+    }
+
     return {
       prompt,
       generatedText: await tokenizer.decode(generatedIds),
@@ -341,6 +439,9 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       nEmbd,
       chainSteps,
       totalDurationMs: Date.now() - t0,
+      specDraftTokens: specDraftTokens || undefined,
+      specAcceptedTokens: specAcceptedTokens || undefined,
+      specAcceptanceRate: specDraftTokens > 0 ? specAcceptanceRate : undefined,
     }
   })
 }

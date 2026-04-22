@@ -12,7 +12,8 @@ const KV_IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 const MSG_OPEN    = 0x01
 const MSG_FORWARD = 0x02
-const MSG_CLOSE   = 0x03
+const MSG_CLOSE     = 0x03
+const MSG_ROLLBACK  = 0x04
 const STATUS_OK   = 0x00
 const STATUS_ERR  = 0x01
 
@@ -23,6 +24,7 @@ export interface KVSessionHandler {
   onOpen(sessionId: string, maxSeqLen: number): Promise<{ ok: true }>
   onForward(sessionId: string, input: Float32Array, nTokens: number, nEmbd: number, requestId?: string): Promise<Float32Array>
   onClose(sessionId: string): Promise<void>
+  onRollback?(sessionId: string, newNPast: number): Promise<void>
 }
 
 // ── Writing helpers ──────────────────────────────────────────────────────────
@@ -127,6 +129,12 @@ export async function registerKVHandler(libp2p: Libp2p, handler: KVSessionHandle
           await handler.onClose(json.sessionId as string)
           await writeResponse(stream, STATUS_OK, Buffer.from('{"ok":true}', 'utf-8'), false)
           break
+        } else if (msgType === MSG_ROLLBACK) {
+          const json = JSON.parse(payload.toString('utf-8'))
+          if (handler.onRollback) {
+            await handler.onRollback(json.sessionId as string, json.newNPast as number)
+          }
+          await writeResponse(stream, STATUS_OK, Buffer.from('{"ok":true}', 'utf-8'), false)
         } else {
           await writeResponse(stream, STATUS_ERR, Buffer.from(`Unknown msg type: ${msgType}`, 'utf-8'), false)
           break
@@ -204,6 +212,16 @@ export class KVSessionClient {
     const alignedBuf = Buffer.allocUnsafe(respPayload.byteLength)
     respPayload.copy(alignedBuf, 0)
     return new Float32Array(alignedBuf.buffer, 0, respPayload.byteLength / 4)
+  }
+
+  async rollback(newNPast: number): Promise<void> {
+    const json = Buffer.from(JSON.stringify({ sessionId: this.sessionId, newNPast }), 'utf-8')
+    await writeRawMessage(this.stream, MSG_ROLLBACK, json)
+
+    const status = await this.reader.readUint8()
+    const flags = await this.reader.readUint8()
+    await readPayload(this.reader, flags)
+    if (status === STATUS_ERR) throw new Error(`KV rollback failed for session ${this.sessionId}`)
   }
 
   async close(): Promise<void> {

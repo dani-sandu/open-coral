@@ -305,3 +305,124 @@ describe('session API (openSession / sessionForward / closeSession)', () => {
     getNative().closeSession(handle, sid2)
   })
 })
+
+// ── sessionDecodeLogitsAll ───────────────────────────────────────────────────
+describe('sessionDecodeLogitsAll', () => {
+  let handle: number
+
+  beforeAll(() => {
+    writeFileSync(MODEL_PATH, buildTinyGGUF())
+    handle = getNative().loadBlockRange(
+      MODEL_PATH, 0, -1, TINY_CONFIG.n_blocks
+    )
+  })
+
+  afterAll(() => {
+    getNative().freeBlockRange(handle)
+    try { unlinkSync(MODEL_PATH) } catch {}
+  })
+
+  it('returns n_tokens × vocabSize logits', () => {
+    const sid = getNative().openSession(handle, 128)
+    const ids = new Int32Array([0, 1, 2])
+    const logits = getNative().sessionDecodeLogitsAll(handle, sid, ids)
+    expect(logits).toBeInstanceOf(Float32Array)
+    expect(logits.length).toBe(3 * TINY_CONFIG.vocab_size)
+    getNative().closeSession(handle, sid)
+  })
+
+  it('all logits contain finite values', () => {
+    const sid = getNative().openSession(handle, 128)
+    const ids = new Int32Array([0])
+    const logits = getNative().sessionDecodeLogitsAll(handle, sid, ids)
+    for (let i = 0; i < logits.length; i++) {
+      expect(isFinite(logits[i])).toBe(true)
+    }
+    getNative().closeSession(handle, sid)
+  })
+
+  it('last-token slice matches sessionDecodeLogits output', () => {
+    const sid1 = getNative().openSession(handle, 128)
+    const sid2 = getNative().openSession(handle, 128)
+    const ids = new Int32Array([0, 1, 2])
+
+    const allLogits = getNative().sessionDecodeLogitsAll(handle, sid1, ids)
+    const lastLogits = getNative().sessionDecodeLogits(handle, sid2, ids)
+
+    const vocabSize = TINY_CONFIG.vocab_size
+    const lastSlice = allLogits.slice(2 * vocabSize, 3 * vocabSize)
+    for (let i = 0; i < vocabSize; i++) {
+      expect(lastSlice[i]).toBeCloseTo(lastLogits[i], 4)
+    }
+
+    getNative().closeSession(handle, sid1)
+    getNative().closeSession(handle, sid2)
+  })
+})
+
+// ── sessionRollback ──────────────────────────────────────────────────────────
+describe('sessionRollback', () => {
+  let handle: number
+
+  beforeAll(() => {
+    writeFileSync(MODEL_PATH, buildTinyGGUF())
+    handle = getNative().loadBlockRange(
+      MODEL_PATH, 0, TINY_CONFIG.n_blocks - 1, TINY_CONFIG.n_blocks
+    )
+  })
+
+  afterAll(() => {
+    getNative().freeBlockRange(handle)
+    try { unlinkSync(MODEL_PATH) } catch {}
+  })
+
+  it('allows continued forwarding after rollback', () => {
+    const sid = getNative().openSession(handle, 4)
+    const input = new Float32Array(TINY_CONFIG.n_embd).fill(0.1)
+
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+
+    getNative().sessionRollback(handle, sid, 1)
+
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+    expect(() => getNative().sessionForward(handle, sid, input, 1)).toThrow()
+
+    getNative().closeSession(handle, sid)
+  })
+
+  it('rollback to 0 allows full re-use of session capacity', () => {
+    const sid = getNative().openSession(handle, 2)
+    const input = new Float32Array(TINY_CONFIG.n_embd).fill(0.1)
+
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+    expect(() => getNative().sessionForward(handle, sid, input, 1)).toThrow()
+
+    getNative().sessionRollback(handle, sid, 0)
+
+    getNative().sessionForward(handle, sid, input, 1)
+    getNative().sessionForward(handle, sid, input, 1)
+
+    getNative().closeSession(handle, sid)
+  })
+
+  it('throws on invalid session id', () => {
+    expect(() => getNative().sessionRollback(handle, 99999, 0)).toThrow()
+  })
+})
+
+// ── projectToLogitsAll ───────────────────────────────────────────────────────
+// BLOCKED: llama_project_hidden_to_logits crashes on ALL non-shim contexts
+// (even single-output projectToLogits). The patch's decode()-reuse approach
+// produces a graph the ggml scheduler can't allocate (projection-only graph
+// was never reserved). This is a pre-existing patch bug — NOT caused by our
+// speculative decoding changes. Fix requires reworking the patch's graph
+// reservation to cover the projection-only case.
+//
+// In production, the shim path works because it returns cached logits from
+// lbc_embed_tokens and never calls llama_project_hidden_to_logits.
+// The distributed path (which needs projectToLogitsAll) is blocked on this fix.

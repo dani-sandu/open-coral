@@ -95,4 +95,33 @@ describe('KV session protocol — persistent streams', () => {
     expect(out.length).toBe(256 * 128)
     await client.close()
   })
+
+  it('rollback resets handler state', async () => {
+    let lastRollbackSession: string | undefined
+    let lastRollbackNPast: number | undefined
+
+    const handler: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async (sessionId, newNPast) => {
+        lastRollbackSession = sessionId
+        lastRollbackNPast = newNPast
+      },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handler)
+
+    const client = await KVSessionClient.open(
+      nodeA.libp2p, nodeB.libp2p.peerId, 'sess-rb', 128,
+    )
+
+    await client.rollback(5)
+
+    expect(lastRollbackSession).toBe('sess-rb')
+    expect(lastRollbackNPast).toBe(5)
+
+    await client.close()
+  })
 })

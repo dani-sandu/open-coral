@@ -328,3 +328,84 @@ std::vector<float> lbc_session_decode_logits(
         raw + (size_t)n_tokens * n_vocab
     );
 }
+
+std::vector<float> lbc_session_decode_logits_all(
+        LlamaBlockContext* lbc, int session_id,
+        const int32_t* ids, int n_tokens) {
+    if (n_tokens <= 0)
+        throw std::runtime_error("lbc_session_decode_logits_all: n_tokens must be > 0");
+    if (lbc->block_end != -1)
+        throw std::runtime_error("lbc_session_decode_logits_all: only valid on shim contexts (block_end == -1)");
+    auto it = lbc->sessions.find(session_id);
+    if (it == lbc->sessions.end())
+        throw std::runtime_error("lbc_session_decode_logits_all: invalid session id: " + std::to_string(session_id));
+    if (it->second.n_past + n_tokens > it->second.max_length)
+        throw std::runtime_error("lbc_session_decode_logits_all: sequence exceeds max_length for session " + std::to_string(session_id));
+
+    SessionInfo& info = it->second;
+    const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(lbc->model));
+
+    llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+    for (int i = 0; i < n_tokens; i++) {
+        batch.token[i]     = ids[i];
+        batch.pos[i]       = info.n_past + i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = info.seq_id;
+        batch.logits[i]    = 1; // Request logits for ALL positions
+    }
+    batch.n_tokens = n_tokens;
+
+    int rc = llama_decode(lbc->ctx, batch);
+    llama_batch_free(batch);
+    if (rc != 0)
+        throw std::runtime_error("lbc_session_decode_logits_all: llama_decode failed rc=" + std::to_string(rc));
+
+    info.n_past += n_tokens;
+
+    const float* raw = llama_get_logits(lbc->ctx);
+    if (!raw)
+        throw std::runtime_error("lbc_session_decode_logits_all: llama_get_logits returned null");
+    return std::vector<float>(raw, raw + (size_t)n_tokens * n_vocab);
+}
+
+void lbc_session_rollback(LlamaBlockContext* lbc, int session_id, int new_n_past) {
+    auto it = lbc->sessions.find(session_id);
+    if (it == lbc->sessions.end())
+        throw std::runtime_error("lbc_session_rollback: invalid session id: " + std::to_string(session_id));
+
+    SessionInfo& info = it->second;
+    if (new_n_past < 0 || new_n_past > info.n_past)
+        throw std::runtime_error("lbc_session_rollback: new_n_past " + std::to_string(new_n_past) +
+                                 " out of range [0, " + std::to_string(info.n_past) + "]");
+
+    if (new_n_past < info.n_past) {
+        llama_memory_seq_rm(
+            llama_get_memory(lbc->ctx),
+            (llama_seq_id)info.seq_id,
+            new_n_past, -1);
+        info.n_past = new_n_past;
+    }
+}
+
+std::vector<float> lbc_project_to_logits_all(
+        LlamaBlockContext* lbc, const float* hidden, int n_tokens) {
+    if (n_tokens <= 0)
+        throw std::runtime_error("lbc_project_to_logits_all: n_tokens must be > 0");
+    if (lbc->block_end != lbc->total_blocks - 1 && lbc->block_end != -1)
+        throw std::runtime_error("lbc_project_to_logits_all: only valid on last-node or shim contexts");
+    const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(lbc->model));
+    const int32_t n_embd  = llama_model_n_embd(lbc->model);
+
+    // Project one token at a time via the working single-output path.
+    // llama_project_hidden_to_logits crashes when batch.logits flags multiple
+    // outputs due to a graph scheduler reservation mismatch in the projection-only
+    // graph (no layers, just norm + lm_head). Per-token projection avoids this
+    // and the overhead is negligible — norm + lm_head is cheap vs. transformer layers.
+    std::vector<float> result;
+    result.reserve((size_t)n_tokens * n_vocab);
+    for (int i = 0; i < n_tokens; i++) {
+        auto logits = lbc_project_to_logits(lbc, hidden + (size_t)i * n_embd, 1);
+        result.insert(result.end(), logits.begin(), logits.end());
+    }
+    return result;
+}
