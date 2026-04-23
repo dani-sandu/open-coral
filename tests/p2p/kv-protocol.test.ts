@@ -152,7 +152,7 @@ describe('KV session protocol — persistent streams', () => {
     await client.close()
   })
 
-  it('forwardAll returns STATUS_ERR when onForwardAll not implemented', async () => {
+  it('forwardAll returns STATUS_ERR when onForwardAll not implemented, session remains usable', async () => {
     const handler: KVSessionHandler = {
       onOpen: async () => ({ ok: true }),
       onForward: async (_sid, input) => input,
@@ -172,5 +172,10 @@ describe('KV session protocol — persistent streams', () => {
       threwError = true
     }
     expect(threwError).toBe(true)
+
+    // After STATUS_ERR the stream should still be alive — other ops must succeed
+    const out = await client.forward(input, 1, 4)
+    expect(out.length).toBe(4)
+    await client.close()
   })
 })

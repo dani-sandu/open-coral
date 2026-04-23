@@ -46,6 +46,9 @@ export class NgramCache {
     return this.table.get(key) ?? []
   }
 
+  // 32-bit FNV-1a. Collisions are rare but possible for large vocabularies (e.g. 128K);
+  // the consequence is a wrong draft candidate, which speculative verification rejects —
+  // safe, not catastrophic.
   private hashKey(tokens: number[], start: number, len: number): number {
     let h = 2166136261  // FNV-1a 32-bit offset basis
     for (let i = 0; i < len; i++) {

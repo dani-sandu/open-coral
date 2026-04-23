@@ -148,8 +148,8 @@ export async function registerKVHandler(libp2p: Libp2p, handler: KVSessionHandle
           tensorBytes.copy(alignedBuf, 0)
           const input = new Float32Array(alignedBuf.buffer, 0, tensorBytes.byteLength / 4)
           if (!handler.onForwardAll) {
+            // Respond with error but keep the stream alive so other ops (close, rollback) still work.
             await writeResponse(stream, STATUS_ERR, Buffer.from('onForwardAll not implemented', 'utf-8'), false)
-            break
           } else {
             const output = await handler.onForwardAll(sessionId, input, nTokens, nEmbd)
             const tensorOut = Buffer.from(output.buffer, output.byteOffset, output.byteLength)

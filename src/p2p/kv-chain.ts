@@ -33,17 +33,7 @@ export class KVChain implements VerificationBackend {
   }
 
   async forwardOne(tokenId: number): Promise<Float32Array> {
-    const batch = new Int32Array([tokenId])
-    let hidden = await this.embed(batch)
-    const nEmbd = hidden.length / batch.length
-
-    for (let i = 0; i < this.clients.length - 1; i++) {
-      hidden = await this.clients[i].forward(hidden, 1, nEmbd)
-    }
-
-    const logits = await this.clients[this.clients.length - 1].forwardAll(hidden, 1, nEmbd)
-    this.nPast += 1
-    return logits
+    return this.forwardAll(new Int32Array([tokenId]))
   }
 
   async rollback(newNPast: number): Promise<void> {

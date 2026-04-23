@@ -135,6 +135,7 @@ export class SpeculativeSession {
 
         let accepted = 0
         let rejected = false
+        let terminated = false  // EOS/EOT accepted as draft — stop outer loop without sampling bonus
 
         for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
           // Speculative sampling (Leviathan et al. 2023):
@@ -144,13 +145,15 @@ export class SpeculativeSession {
           if (Math.random() < pAccept) {
             accepted++
             specAcceptedTokens++
+
+            // Match non-speculative behavior: EOS/EOT terminates generation and is NOT emitted.
+            if (draftTokens[i] === this.eosTokenId) { terminated = true; break }
+            if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
+
             generatedIds.push(draftTokens[i])
             allTokens.push(draftTokens[i])
             if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
             totalGenerated++
-
-            if (draftTokens[i] === this.eosTokenId) break
-            if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) break
           } else {
             // Draft rejected: sample corrected token from position i (the rejected slot's logits),
             // then rollback KV cache to discard the unaccepted draft slots.
@@ -162,6 +165,7 @@ export class SpeculativeSession {
           }
         }
 
+        if (terminated) break
         if (!rejected) {
           // All drafts accepted: sample bonus token from position after last draft
           nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, temperature, topK)

@@ -134,8 +134,9 @@ describe('SpeculativeSession', () => {
       if (result.specAcceptedTokens > 0) acceptances++
     }
 
-    // p=0.25, 2000 trials — expect in [150, 600] (very loose bound for CI stability)
-    expect(acceptances).toBeGreaterThan(150)
+    // p=0.25, 2000 trials: mean=500, σ≈19.4 → ±5σ = [400, 600]. Tight enough to catch
+    // regressions in acceptance logic while remaining CI-stable.
+    expect(acceptances).toBeGreaterThan(400)
     expect(acceptances).toBeLessThan(600)
   })
 
@@ -167,6 +168,34 @@ describe('SpeculativeSession', () => {
     expect(backend.rollbackCalls[0]).toBe(3)
     expect(result.specDraftTokens).toBe(1)
     expect(result.specAcceptedTokens).toBe(0)
+  })
+
+  it('EOS accepted as draft terminates generation without emitting EOS', async () => {
+    const vocabSize = 4
+    const eosId = 3
+    // Prompt [0, 3, 0, 3] with ngramSize=1 builds cache [0]→[3], [3]→[0,3]
+    // Prefill sharp on 0 at the last position → nextToken=0
+    // Lookup([...prompt, 0]) last 1 = [0] → draft [3] = EOS
+    // Batch [0, 3=EOS]: position 0 sharp on 3 → p_target[3]≈1 → accept EOS as draft
+    const prefillLogits = sharpLogits(vocabSize, 4, 0)
+    const batchLogits = new Float32Array(2 * vocabSize)
+    batchLogits[0 * vocabSize + eosId] = 100  // position 0: sharp on EOS → accept draft=EOS
+
+    const backend = new MockBackend(vocabSize, [prefillLogits, batchLogits])
+
+    const session = new SpeculativeSession(backend, eosId, undefined, {
+      enabled: true, ngramSize: 1, draftMax: 1, temperature: 0.01, topK: vocabSize,
+    })
+
+    const result = await session.generate(new Int32Array([0, eosId, 0, eosId]), 10)
+
+    // EOS was accepted as draft — counted but not emitted (matches non-speculative behavior)
+    expect(result.specAcceptedTokens).toBe(1)
+    expect(result.tokenIds).not.toContain(eosId)
+    // Generation stopped: only the pre-batch nextToken (0) is in output
+    expect(result.tokenIds).toEqual([0])
+    // No rollback — EOS was accepted, not rejected
+    expect(backend.rollbackCalls).toHaveLength(0)
   })
 
   it('samples bonus token from last logit position when all drafts accepted', async () => {
