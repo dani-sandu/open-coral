@@ -177,10 +177,6 @@ export class AsyncBlockRunner {
     return this.call('sessionRollback', this._handle, sessionId, newNPast) as Promise<void>
   }
 
-  projectToLogitsAll(hidden: Float32Array, nTokens: number): Promise<Float32Array> {
-    return this.call('projectToLogitsAll', this._handle, hidden, nTokens) as Promise<Float32Array>
-  }
-
   async dispose(): Promise<void> {
     if (this._disposed) return
     this._disposed = true

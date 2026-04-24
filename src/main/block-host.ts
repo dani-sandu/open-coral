@@ -3,14 +3,15 @@ import { randomUUID } from 'crypto'
 import { AsyncBlockRunner } from '../inference/native-worker'
 import { BlockRegistry } from '../p2p/block-registry'
 import { registerInferenceHandlerV3 } from '../p2p/inference-protocol'
-import { registerKVHandler, type KVSessionHandler } from '../p2p/kv-protocol'
+import { registerKVHandler } from '../p2p/kv-protocol'
 import { getCurrentModel } from './model-manager'
 import { SequenceManager } from '../inference/sequence-manager'
 import { suggestBlockRange, type CoverageReport } from '../inference/coverage'
 import { loadNativeTokenizer, freeNativeTokenizer, type NativeTokenizer } from '../inference/native-tokenizer'
 import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
-import { SpeculativeSession, LocalVerificationBackend, DEFAULT_SPEC_CONFIG, type GenerateResult } from '../inference/speculative-session'
+import { KVSessionRegistry } from './kv-session-registry'
+import { runInference } from './inference-orchestrator'
 
 export interface HostingState {
   modelPath: string
@@ -43,7 +44,7 @@ export interface InferenceResult {
 interface ActiveHost {
   runner: AsyncBlockRunner
   registry: BlockRegistry
-  kvCleanupTimer: ReturnType<typeof setInterval>
+  kvRegistry: KVSessionRegistry
   state: HostingState
 }
 
@@ -126,64 +127,13 @@ export function setupBlockHostIPC(
       return runner.forward(input, nTokens)
     }, getNodeIdentity())
 
-    // --- KV cache session handler ---
-    const kvSessions = new Map<string, { sessionId: number; lastUsed: number }>()
-    const KV_SESSION_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes
-
-    const kvCleanupTimer = setInterval(() => {
-      const now = Date.now()
-      for (const [id, entry] of kvSessions) {
-        if (now - entry.lastUsed > KV_SESSION_TIMEOUT_MS) {
-          runner.closeSession(entry.sessionId).catch(() => {})
-          kvSessions.delete(id)
-          console.log(`[OpenCoral KV] Cleaned up stale session ${id}`)
-        }
-      }
-    }, 60_000)
-
-    const kvHandler: KVSessionHandler = {
-      async onOpen(sessionId, maxSeqLen) {
-        if (kvSessions.has(sessionId)) return { ok: true }  // idempotent
-        const nativeSessionId = await runner.openSession(maxSeqLen)
-        kvSessions.set(sessionId, { sessionId: nativeSessionId, lastUsed: Date.now() })
-        return { ok: true }
-      },
-
-      async onForward(sessionId, input, nTokens, _nEmbd) {
-        const entry = kvSessions.get(sessionId)
-        if (!entry) throw new Error(`KV session not found: ${sessionId}`)
-        entry.lastUsed = Date.now()
-        return runner.sessionForward(entry.sessionId, input, nTokens)
-      },
-
-      async onClose(sessionId) {
-        const entry = kvSessions.get(sessionId)
-        if (!entry) return
-        runner.closeSession(entry.sessionId).catch(() => {})
-        kvSessions.delete(sessionId)
-      },
-
-      async onRollback(sessionId, newNPast) {
-        const entry = kvSessions.get(sessionId)
-        if (!entry) throw new Error(`KV session not found: ${sessionId}`)
-        entry.lastUsed = Date.now()
-        await runner.sessionRollback(entry.sessionId, newNPast)
-      },
-
-      async onForwardAll(sessionId, input, nTokens, _nEmbd) {
-        const entry = kvSessions.get(sessionId)
-        if (!entry) throw new Error(`KV session not found: ${sessionId}`)
-        entry.lastUsed = Date.now()
-        return runner.projectToLogitsAll(input, nTokens)
-      },
-    }
-
-    await registerKVHandler(node.libp2p, kvHandler)
+    const kvRegistry = new KVSessionRegistry(runner)
+    await registerKVHandler(node.libp2p, kvRegistry.buildHandler())
 
     activeHost = {
       runner,
       registry,
-      kvCleanupTimer,
+      kvRegistry,
       state: {
         modelPath: model.path,
         blockStart,
@@ -199,7 +149,7 @@ export function setupBlockHostIPC(
 
   ipcMain.handle('opencoral:stop-hosting', async (): Promise<void> => {
     if (!activeHost) return
-    clearInterval(activeHost.kvCleanupTimer)
+    await activeHost.kvRegistry.dispose()
     await activeHost.runner.dispose()
     activeHost.registry.dispose()
     activeHost = null
@@ -264,33 +214,13 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
 
     const t0 = Date.now()
 
-    // Tokenize prompt with chat template
-    const promptIds = await tokenizer.encodeChat(prompt)
-    console.log(`[OpenCoral] [${requestId}] Prompt tokens (${promptIds.length})`)
-
-    const shimSessionId = await embedRunner.openSession(promptIds.length + maxTokens)
-    let inferenceDurationMs = 0
-    let genResult: GenerateResult = { tokenIds: [], specDraftTokens: 0, specAcceptedTokens: 0 }
-
-    try {
-      const backend = new LocalVerificationBackend(embedRunner, shimSessionId)
-      const session = new SpeculativeSession(
-        backend,
-        tokenizer.eosTokenId,
-        tokenizer.endOfTurnTokenId,
-        DEFAULT_SPEC_CONFIG,
-      )
-      const t1 = Date.now()
-      genResult = await session.generate(new Int32Array(promptIds), maxTokens)
-      inferenceDurationMs = Date.now() - t1
-
-      if (genResult.specDraftTokens > 0) {
-        const rate = (genResult.specAcceptedTokens / genResult.specDraftTokens * 100).toFixed(1)
-        console.log(`[OpenCoral] [${requestId}] Spec decoding: ${genResult.specAcceptedTokens}/${genResult.specDraftTokens} accepted (${rate}%)`)
-      }
-    } finally {
-      await embedRunner.closeSession(shimSessionId)
-    }
+    const { genResult, inferenceDurationMs } = await runInference({
+      runner: embedRunner,
+      tokenizer,
+      prompt,
+      maxTokens,
+      requestId,
+    })
 
     // Build chain step results (block ranges from plan, total time from inference)
     const chainSteps = chain.map((s, i) => ({

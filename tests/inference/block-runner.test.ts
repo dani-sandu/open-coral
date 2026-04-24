@@ -415,14 +415,8 @@ describe('sessionRollback', () => {
   })
 })
 
-// ── projectToLogitsAll ───────────────────────────────────────────────────────
-// BLOCKED: llama_project_hidden_to_logits crashes on ALL non-shim contexts
-// (even single-output projectToLogits). The patch's decode()-reuse approach
-// produces a graph the ggml scheduler can't allocate (projection-only graph
-// was never reserved). This is a pre-existing patch bug — NOT caused by our
-// speculative decoding changes. Fix requires reworking the patch's graph
-// reservation to cover the projection-only case.
-//
-// In production, the shim path works because it returns cached logits from
-// lbc_embed_tokens and never calls llama_project_hidden_to_logits.
-// The distributed path (which needs projectToLogitsAll) is blocked on this fix.
+// projectToLogitsAll was removed — the llama.cpp patch that implements
+// llama_project_hidden_to_logits crashes on all non-shim contexts (the
+// projection-only graph isn't reserved by the ggml scheduler). Distributed
+// projection over the wire (MSG_FORWARD_ALL) returns STATUS_ERR from the
+// KV handler until the patch is fixed — see KVSessionRegistry.buildHandler.

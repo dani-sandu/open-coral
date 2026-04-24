@@ -6,7 +6,7 @@ import {
   KVSessionClient,
   type KVSessionHandler,
 } from '../../src/p2p/kv-protocol'
-import { KVChain } from '../../src/p2p/kv-chain'
+import { KVChain, SessionPoisonedError } from '../../src/p2p/kv-chain'
 import type { VerificationBackend } from '../../src/inference/speculative-session'
 
 describe('KVChain', () => {
@@ -62,11 +62,13 @@ describe('KVChain', () => {
     const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'chain-1', 64)
     const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'chain-1', 64)
 
-    // Mock embed function: returns nTokens * nEmbd floats
-    const mockEmbed = async (_ids: Int32Array): Promise<Float32Array> =>
-      new Float32Array(nTokens * nEmbd).fill(0.1)
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (_ids: Int32Array): Promise<Float32Array> =>
+        new Float32Array(nTokens * nEmbd).fill(0.1),
+    }
 
-    const chain = new KVChain(mockEmbed, [clientB, clientC], vocabSize)
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], vocabSize)
     const logits = await chain.forwardAll(new Int32Array([1, 2]))
 
     expect(logits.length).toBe(nTokens * vocabSize)
@@ -117,8 +119,11 @@ describe('KVChain', () => {
     const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'rb-chain', 64)
     const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'rb-chain', 64)
 
-    const mockEmbed = async (_ids: Int32Array): Promise<Float32Array> => new Float32Array(4)
-    const chain = new KVChain(mockEmbed, [clientB, clientC], 8)
+    const mockEmbedder = {
+      nEmbd: 4,
+      embed: async (_ids: Int32Array): Promise<Float32Array> => new Float32Array(4),
+    }
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], 8)
 
     // Start rollback — both handlers should be entered before either resolves
     const rollbackPromise = chain.rollback(3)
@@ -150,8 +155,11 @@ describe('KVChain', () => {
     await registerKVHandler(nodeC.libp2p, handlerC)
 
     const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'npast', 64)
-    const mockEmbed = async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd)
-    const chain = new KVChain(mockEmbed, [clientC], vocabSize)
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientC], vocabSize)
 
     expect(chain.nPast).toBe(0)
     await chain.forwardAll(new Int32Array([1, 2, 3]))
@@ -181,13 +189,244 @@ describe('KVChain', () => {
     await registerKVHandler(nodeC.libp2p, handlerC)
 
     const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'single', 64)
-    const mockEmbed = async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd)
-    const chain = new KVChain(mockEmbed, [clientC], vocabSize)
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientC], vocabSize)
 
     await chain.forwardAll(new Int32Array([1]))
     expect(gotForwardAll).toBe(true)
 
     await clientC.close()
+  })
+
+  it('middle peer failure triggers rollback on preceding peers', async () => {
+    const nEmbd = 4
+    const vocabSize = 8
+    const rollbacksB: number[] = []
+    const rollbacksC: number[] = []
+
+    // Peer B succeeds on forward; will be compensated via rollback.
+    const handlerB: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async (_sid, newNPast) => { rollbacksB.push(newNPast) },
+    }
+    // Peer C is the last node; its forwardAll fails.
+    const handlerC: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onForwardAll: async () => { throw new Error('peer C forwardAll failed') },
+      onClose: async () => {},
+      onRollback: async (_sid, newNPast) => { rollbacksC.push(newNPast) },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    try { await nodeC.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handlerB)
+    await registerKVHandler(nodeC.libp2p, handlerC)
+
+    const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'mid-fail', 64)
+    const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'mid-fail', 64)
+
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array) => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], vocabSize)
+
+    let threw = false
+    try {
+      await chain.forwardAll(new Int32Array([1, 2]))
+    } catch {
+      threw = true
+    }
+    expect(threw).toBe(true)
+    // Peer B (which advanced) should have been rolled back to preNPast (0)
+    expect(rollbacksB).toEqual([0])
+    // Peer C's forwardAll failed, so nothing to roll back on C
+    expect(rollbacksC).toEqual([])
+    expect(chain.nPast).toBe(0)
+
+    await clientB.close().catch(() => {})
+    await clientC.close().catch(() => {})
+  })
+
+  it('embed failure does not touch peers', async () => {
+    const nEmbd = 4
+    const vocabSize = 8
+    const forwardsB: number[] = []
+    const rollbacksB: number[] = []
+
+    const handlerB: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input, nTokens) => { forwardsB.push(nTokens); return input },
+      onForwardAll: async (_sid, _input, n) => new Float32Array(n * vocabSize),
+      onClose: async () => {},
+      onRollback: async (_sid, newNPast) => { rollbacksB.push(newNPast) },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handlerB)
+
+    const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'embed-fail', 64)
+
+    const failingEmbedder = {
+      nEmbd,
+      embed: async (_ids: Int32Array): Promise<Float32Array> => {
+        throw new Error('embed exploded')
+      },
+    }
+    const chain = new KVChain(failingEmbedder, [clientB], vocabSize)
+
+    let caughtMsg = ''
+    try {
+      await chain.forwardAll(new Int32Array([1]))
+    } catch (err) {
+      caughtMsg = (err as Error).message
+    }
+    expect(caughtMsg).toBe('embed exploded')
+    expect(forwardsB).toEqual([])
+    expect(rollbacksB).toEqual([])
+    expect(chain.nPast).toBe(0)
+
+    await clientB.close()
+  })
+
+  it('compensation rollback failure throws SessionPoisonedError', async () => {
+    const nEmbd = 4
+    const vocabSize = 8
+
+    // B: forward succeeds; rollback fails → compensation fails → poison
+    const handlerB: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async () => { throw new Error('peer B rollback failed') },
+    }
+    // C is the last node; its forwardAll fails, triggering compensation on B.
+    const handlerC: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onForwardAll: async () => { throw new Error('peer C forwardAll failed') },
+      onClose: async () => {},
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    try { await nodeC.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handlerB)
+    await registerKVHandler(nodeC.libp2p, handlerC)
+
+    const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'poison-1', 64)
+    const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'poison-1', 64)
+
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array) => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], vocabSize)
+
+    let caught: unknown = null
+    try {
+      await chain.forwardAll(new Int32Array([1]))
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(SessionPoisonedError)
+    expect((caught as SessionPoisonedError).cause).toBeInstanceOf(Error)
+    expect(chain.nPast).toBe(0)
+
+    await clientB.close().catch(() => {})
+    await clientC.close().catch(() => {})
+  })
+
+  it('nPast advances exactly once on successful forwardAll', async () => {
+    const nEmbd = 4
+    const vocabSize = 8
+
+    const handlerB: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+    }
+    const handlerC: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onForwardAll: async (_sid, _input, n) => new Float32Array(n * vocabSize),
+      onClose: async () => {},
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    try { await nodeC.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handlerB)
+    await registerKVHandler(nodeC.libp2p, handlerC)
+
+    const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'n-once', 64)
+    const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'n-once', 64)
+
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array) => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], vocabSize)
+
+    expect(chain.nPast).toBe(0)
+    await chain.forwardAll(new Int32Array([1, 2, 3]))
+    expect(chain.nPast).toBe(3)
+
+    await clientB.close()
+    await clientC.close()
+  })
+
+  it('partial rollback failure throws SessionPoisonedError and does not update nPast', async () => {
+    const nEmbd = 4
+    const vocabSize = 8
+
+    const handlerB: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async () => {},  // B rolls back successfully
+    }
+    const handlerC: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async () => { throw new Error('peer C rollback failed') },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    try { await nodeC.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handlerB)
+    await registerKVHandler(nodeC.libp2p, handlerC)
+
+    const clientB = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'rb-poison', 64)
+    const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'rb-poison', 64)
+
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array) => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientB, clientC], vocabSize)
+
+    // Pretend the chain already advanced to position 5 (unit-test the rollback path directly).
+    ;(chain as unknown as { nPast: number }).nPast = 5
+
+    let caught: unknown = null
+    try {
+      await chain.rollback(3)
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(SessionPoisonedError)
+    // nPast must stay at 5 because the rollback was partial.
+    expect(chain.nPast).toBe(5)
+
+    await clientB.close().catch(() => {})
+    await clientC.close().catch(() => {})
   })
 
   it('forwardOne increments nPast by 1 and routes to last client forwardAll', async () => {
@@ -209,8 +448,11 @@ describe('KVChain', () => {
     await registerKVHandler(nodeC.libp2p, handlerC)
 
     const clientC = await KVSessionClient.open(nodeA.libp2p, nodeC.libp2p.peerId, 'fwd-one', 64)
-    const mockEmbed = async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd)
-    const chain = new KVChain(mockEmbed, [clientC], vocabSize)
+    const mockEmbedder = {
+      nEmbd,
+      embed: async (ids: Int32Array): Promise<Float32Array> => new Float32Array(ids.length * nEmbd),
+    }
+    const chain = new KVChain(mockEmbedder, [clientC], vocabSize)
 
     expect(chain.nPast).toBe(0)
     const logits = await chain.forwardOne(42)

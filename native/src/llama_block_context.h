@@ -74,8 +74,3 @@ std::vector<float> lbc_session_decode_logits_all(
 // Roll back a session's KV cache to a previous position.
 // Trims all KV entries from new_n_past onward and resets info.n_past.
 void lbc_session_rollback(LlamaBlockContext* lbc, int session_id, int new_n_past);
-
-// Last-node only: hidden -> logits for ALL tokens.
-// Returns n_tokens * n_vocab floats. Only valid on last-node or shim contexts.
-std::vector<float> lbc_project_to_logits_all(
-    LlamaBlockContext* lbc, const float* hidden, int n_tokens);

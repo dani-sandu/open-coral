@@ -146,23 +146,7 @@ export class BlockRunner {
     getNative().sessionRollback(this._handle, sessionId, newNPast)
   }
 
-  /**
-   * Project hidden states to logits for ALL token positions.
-   * Returns Float32Array of length nTokens × vocabSize.
-   */
-  projectToLogitsAll(hidden: Float32Array, nTokens: number): Float32Array {
-    if (this._disposed) throw new Error('BlockRunner has been disposed')
-    const expected = nTokens * this.hiddenSize
-    if (hidden.length !== expected) {
-      throw new Error(
-        `Input length ${hidden.length} does not match expected ${expected} ` +
-        `(${nTokens} tokens × ${this.hiddenSize} hidden size)`
-      )
-    }
-    return getNative().projectToLogitsAll(this._handle, hidden, nTokens)
-  }
-
-  /** Release native resources. Safe to call multiple times. */
+/** Release native resources. Safe to call multiple times. */
   dispose(): void {
     if (!this._disposed) {
       getNative().freeBlockRange(this._handle)
