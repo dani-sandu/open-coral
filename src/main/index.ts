@@ -2,8 +2,8 @@ import { app, BrowserWindow, shell, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import { createOpenCoralNode, getBootstrapPeers, type OpenCoralNode } from '../p2p/node'
 import { inspectNetwork, type NetworkState } from '../p2p/network-inspector'
-import { setupModelIPC, getCurrentModel } from './model-manager'
-import { setupBlockHostIPC, setupInferenceIPC, setupCoverageIPC, getActiveHost } from './block-host'
+import { setupModelIPC, getCurrentModel, subscribeModelChange } from './model-manager'
+import { setupBlockHostIPC, setupInferenceIPC, setupCoverageIPC, getActiveHost, getShimRunner, getCachedTokenizer } from './block-host'
 import { setupHuggingFaceIPC } from './huggingface'
 import { registerModelInfoHandler, queryPeerModelInfo } from '../p2p/model-announce'
 import { DiscoveredModels } from '../p2p/discovered-models'
@@ -11,12 +11,25 @@ import type { NetworkModelEntry } from '../p2p/discovered-models'
 import { PeerLatencyTracker } from '../p2p/peer-latency'
 import { loadOrCreateIdentity } from './identity'
 import type { NodeIdentity } from './identity'
+import { SessionStore } from './session-store'
+import {
+  ChatSessionManager,
+  SequenceManagerChainPlanner,
+} from './chat-session-manager'
+import {
+  setupChatSessionIPC,
+  broadcastSessionPhase,
+  broadcastSessionInvalidated,
+} from './chat-session-ipc'
+import { SequenceManager } from '../inference/sequence-manager'
 
 let openCoralNode: OpenCoralNode | null = null
 let localBlocks: { start: number; end: number }[] = []
 const discoveredModels = new DiscoveredModels()
 const latencyTracker = new PeerLatencyTracker()
 let nodeIdentity: NodeIdentity | null = null
+let sessionStore: SessionStore | null = null
+let chatSessionManager: ChatSessionManager | null = null
 
 export function getPeerBlockRange(peerId: string): { blockStart: number; blockEnd: number } | null {
   return discoveredModels.getPeerRange(peerId)
@@ -27,6 +40,23 @@ export function getLatencyTracker(): PeerLatencyTracker { return latencyTracker 
 export function getNodeIdentity(): NodeIdentity {
   if (!nodeIdentity) throw new Error('Identity not yet loaded')
   return nodeIdentity
+}
+
+function buildPlanner(): SequenceManagerChainPlanner | null {
+  if (!openCoralNode) return null
+  const model = getCurrentModel()
+  if (!model) return null
+  const sm = new SequenceManager({
+    node: openCoralNode,
+    localRunner: getActiveHost()?.runner ?? null,
+    totalBlocks: model.totalBlocks,
+    hiddenSize: model.hiddenSize,
+    getPeerBlockRange,
+    latencyTracker: getLatencyTracker(),
+    identity: getNodeIdentity(),
+    repoId: model.repoId,
+  })
+  return new SequenceManagerChainPlanner({ node: openCoralNode, manager: sm })
 }
 
 async function startOpenCoralNode(): Promise<void> {
@@ -66,6 +96,7 @@ async function startOpenCoralNode(): Promise<void> {
       const peerId = evt.detail
       discoveredModels.remove(peerId.toString())
       latencyTracker.forget(peerId.toString())
+      chatSessionManager?.notifyPeerDisconnected(peerId.toString())
     })
   } catch (err) {
     console.error('[OpenCoral] Failed to start P2P node:', err)
@@ -119,6 +150,30 @@ function setupIPC(): void {
   setupCoverageIPC(() => openCoralNode)
   setupHuggingFaceIPC()
   setupNetworkModelIPC()
+
+  // ── Chat session persistence ─────────────────────────────────────────────────
+  const sessionsDir = join(app.getPath('userData'), 'sessions')
+  sessionStore = new SessionStore(sessionsDir)
+  sessionStore.init().catch(err => console.error('[OpenCoral] SessionStore init failed:', err))
+
+  chatSessionManager = new ChatSessionManager({
+    store: sessionStore,
+    // The shim runner is the one valid for local KV ops (sessionDecodeLogitsAll
+    // requires block_end == -1). activeHost.runner is for serving peer inference
+    // via the v3 protocol — not local inference. Mirrors the embedRunner
+    // precedence in src/main/block-host.ts.
+    getRunner: () => getShimRunner() ?? getActiveHost()?.runner ?? null,
+    getTokenizer: () => getCachedTokenizer(),
+    getPlanner: () => buildPlanner(),
+    emitPhase: broadcastSessionPhase,
+    emitInvalidation: broadcastSessionInvalidated,
+  })
+
+  setupChatSessionIPC(chatSessionManager, sessionStore)
+
+  subscribeModelChange(() => {
+    chatSessionManager?.invalidateActive('model-change').catch(() => {})
+  })
 
   ipcMain.handle('opencoral:get-network-state', (): NetworkState | null => {
     if (!openCoralNode) return null
@@ -213,6 +268,12 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async () => {
+  if (sessionStore) {
+    try { await sessionStore.flush() } catch (err) { console.error('[OpenCoral] sessionStore.flush failed:', err) }
+  }
+  if (chatSessionManager) {
+    try { await chatSessionManager.shutdown() } catch (err) { console.error('[OpenCoral] chatSessionManager.shutdown failed:', err) }
+  }
   if (openCoralNode) {
     await openCoralNode.stop()
     openCoralNode = null

@@ -21,3 +21,10 @@ std::vector<int32_t> vocab_tokenize(VocabContext* vc, const std::string& text, b
 std::string          vocab_token_to_piece(VocabContext* vc, int32_t token_id);
 std::string          vocab_apply_chat_template(VocabContext* vc, const std::string& user_message);
 VocabSpecialTokens   vocab_get_special_tokens(VocabContext* vc);
+
+struct ChatTurn {
+    std::string role;
+    std::string content;
+};
+
+std::string          vocab_apply_chat_template_multi(VocabContext* vc, const std::vector<ChatTurn>& turns);

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test'
+import type { ChatTurn } from '../../src/inference/native-tokenizer'
 
 const GGUF_PATH = process.env.TEST_GGUF_PATH
 
@@ -58,5 +59,33 @@ describe('NativeTokenizer', async () => {
   it('freeNativeTokenizer does not throw', () => {
     const tok2 = loadNativeTokenizer(GGUF_PATH)
     expect(() => freeNativeTokenizer(tok2)).not.toThrow()
+  })
+})
+
+describe('NativeTokenizer.encodeChatMulti', async () => {
+  if (!GGUF_PATH) {
+    it.skip('skipped — set TEST_GGUF_PATH to run native tokenizer tests', () => {})
+    return
+  }
+
+  const { loadNativeTokenizer } = await import('../../src/inference/native-tokenizer')
+
+  const tok = await loadNativeTokenizer(GGUF_PATH)
+
+  it('produces a longer token sequence for multi-turn than single-turn', async () => {
+    const single = await tok.encodeChat('Hello')
+    const multi: ChatTurn[] = [
+      { role: 'user',      content: 'Hello' },
+      { role: 'assistant', content: 'Hi! How can I help?' },
+      { role: 'user',      content: 'What is 2+2?' },
+    ]
+    const multiTokens = await tok.encodeChatMulti(multi)
+    expect(multiTokens.length).toBeGreaterThan(single.length)
+  })
+
+  it('returns identical tokens when given a single user turn', async () => {
+    const single = await tok.encodeChat('Hi there')
+    const multi  = await tok.encodeChatMulti([{ role: 'user', content: 'Hi there' }])
+    expect(Array.from(multi)).toEqual(Array.from(single))
   })
 })

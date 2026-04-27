@@ -66,6 +66,7 @@ export interface ChatSession {
   title: string
   messages: ChatMessage[]
   createdAt: number
+  updatedAt: number
 }
 
 export interface NetworkState {
@@ -164,6 +165,30 @@ export interface LocalModelEntry {
   shardFiles?: string[]
 }
 
+export interface SessionSummary {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+  corrupt?: boolean
+}
+
+export interface SessionPhaseEvent {
+  sessionId: string
+  phase: 'planning' | 'opening-remote-kv' | 'prefilling' | 'ready' | 'error'
+  prefilledTokens?: number
+  totalTokens?: number
+  error?: string
+}
+
+export interface SessionInvalidationEvent {
+  sessionId: string
+  reason: 'peer-drop' | 'model-change'
+}
+
+export type Unsubscribe = () => void
+
 declare global {
   interface Window {
     opencoral: {
@@ -189,6 +214,17 @@ declare global {
       discoverNetworkModels: () => Promise<NetworkModelEntry[]>
       loadModelByHFIdentity: (repoId: string, hfFilename: string) => Promise<ModelInfo>
       listLocalModels: () => Promise<LocalModelEntry[]>
+      // Chat sessions
+      listSessions: () => Promise<SessionSummary[]>
+      getSession: (id: string) => Promise<ChatSession | null>
+      createSession: () => Promise<SessionSummary>
+      sendTurn: (sessionId: string, userText: string, maxTokens: number) => Promise<{ generatedText: string; trace: InferenceResult }>
+      deleteSession: (id: string) => Promise<void>
+      renameSession: (id: string, title: string) => Promise<void>
+      onSessionUpdated: (handler: (s: SessionSummary) => void) => Unsubscribe
+      onSessionDeleted: (handler: (id: string) => void) => Unsubscribe
+      onSessionPhase: (handler: (e: SessionPhaseEvent) => void) => Unsubscribe
+      onSessionInvalidated: (handler: (e: SessionInvalidationEvent) => void) => Unsubscribe
     }
   }
 }

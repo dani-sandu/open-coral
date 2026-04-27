@@ -286,3 +286,7 @@ export function setupCoverageIPC(getNode: () => OpenCoralNode | null): void {
 export function getActiveHost(): ActiveHost | null {
   return activeHost
 }
+
+export function getCachedTokenizer(): NativeTokenizer | null {
+  return cachedTokenizer
+}

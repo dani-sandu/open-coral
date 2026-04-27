@@ -246,6 +246,10 @@ export class AsyncVocabRunner {
     return this.call('nativeApplyChatTemplate', this._handle, userMessage) as Promise<string>
   }
 
+  applyChatTemplateMulti(turns: { role: string; content: string }[]): Promise<string> {
+    return this.call('nativeApplyChatTemplateMulti', this._handle, turns) as Promise<string>
+  }
+
   getSpecialTokens(): Promise<{ bosId: number; eosId: number; eotId: number; vocabSize: number }> {
     return this.call('nativeGetSpecialTokens', this._handle) as Promise<{ bosId: number; eosId: number; eotId: number; vocabSize: number }>
   }

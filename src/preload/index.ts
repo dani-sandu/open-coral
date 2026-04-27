@@ -44,4 +44,35 @@ contextBridge.exposeInMainWorld('opencoral', {
     ipcRenderer.invoke('opencoral:load-model-by-hf-identity', repoId, hfFilename),
 
   listLocalModels: () => ipcRenderer.invoke('opencoral:list-local-models'),
+
+  // Chat sessions
+  listSessions:    () => ipcRenderer.invoke('opencoral:list-sessions'),
+  getSession:      (id: string) => ipcRenderer.invoke('opencoral:get-session', id),
+  createSession:   () => ipcRenderer.invoke('opencoral:create-session'),
+  sendTurn:        (sessionId: string, userText: string, maxTokens: number) =>
+    ipcRenderer.invoke('opencoral:send-turn', sessionId, userText, maxTokens),
+  deleteSession:   (id: string) => ipcRenderer.invoke('opencoral:delete-session', id),
+  renameSession:   (id: string, title: string) => ipcRenderer.invoke('opencoral:rename-session', id, title),
+
+  // Event subscriptions — return an unsubscribe function so React useEffect cleanups work.
+  onSessionUpdated: (handler: (s: unknown) => void) => {
+    const wrapped = (_e: unknown, s: unknown): void => handler(s)
+    ipcRenderer.on('opencoral:session-updated', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:session-updated', wrapped)
+  },
+  onSessionDeleted: (handler: (id: string) => void) => {
+    const wrapped = (_e: unknown, id: string): void => handler(id)
+    ipcRenderer.on('opencoral:session-deleted', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:session-deleted', wrapped)
+  },
+  onSessionPhase: (handler: (e: unknown) => void) => {
+    const wrapped = (_e: unknown, payload: unknown): void => handler(payload)
+    ipcRenderer.on('opencoral:session-phase', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:session-phase', wrapped)
+  },
+  onSessionInvalidated: (handler: (e: unknown) => void) => {
+    const wrapped = (_e: unknown, payload: unknown): void => handler(payload)
+    ipcRenderer.on('opencoral:session-invalidated', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:session-invalidated', wrapped)
+  },
 })

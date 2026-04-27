@@ -29,6 +29,19 @@ export interface ModelInfo {
 let currentModel: ModelInfo | null = null
 let currentGGUFHeader: GGUFHeader | null = null
 
+const modelChangeListeners = new Set<() => void>()
+
+export function subscribeModelChange(handler: () => void): () => void {
+  modelChangeListeners.add(handler)
+  return () => modelChangeListeners.delete(handler)
+}
+
+function fireModelChange(): void {
+  for (const fn of modelChangeListeners) {
+    try { fn() } catch (err) { console.error('[ModelManager] modelChange handler threw:', err) }
+  }
+}
+
 /**
  * Parse GGUF metadata from a file path.
  * Returns both the ModelInfo summary and the raw GGUFHeader.
@@ -133,6 +146,7 @@ async function loadAndSet(filePath: string, repoId: string, hfFilename: string):
   }
 
   currentModel = model
+  fireModelChange()
   currentGGUFHeader = loaded.header
   return currentModel
 }
@@ -149,6 +163,7 @@ export function setupModelIPC(): void {
     await disposeShimRunner()
     const loaded = loadModelInfo(result.filePaths[0])
     currentModel = loaded.info
+    fireModelChange()
     currentGGUFHeader = loaded.header
     return currentModel
   })
@@ -157,6 +172,7 @@ export function setupModelIPC(): void {
     await disposeShimRunner()
     const loaded = loadModelInfo(filePath)
     currentModel = loaded.info
+    fireModelChange()
     currentGGUFHeader = loaded.header
     return currentModel
   })

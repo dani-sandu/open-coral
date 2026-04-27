@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import type { CoverageReport, InferenceResult, ChatMessage, ChatSession, ModelInfo } from '../../types'
+import type { CoverageReport, InferenceResult, ChatMessage, ChatSession, ModelInfo, SessionSummary, SessionPhaseEvent } from '../../types'
 import CoverageStatus from '../Block/CoverageStatus'
 import ModelSelector from '../Model/ModelSelector'
 import TabShell from '../shared/TabShell'
@@ -32,7 +32,7 @@ const THINKING_MESSAGES = [
   'Almost there…',
 ]
 
-function ThinkingIndicator(): React.JSX.Element {
+function ThinkingIndicator({ phase }: { phase: SessionPhaseEvent | null }): React.JSX.Element {
   const [frame, setFrame] = useState(0)
   const [msgIdx, setMsgIdx] = useState(0)
   const [elapsed, setElapsed] = useState(0)
@@ -54,6 +54,25 @@ function ThinkingIndicator(): React.JSX.Element {
     }
   }, [])
 
+  let label: string = THINKING_MESSAGES[msgIdx]
+  if (phase) {
+    if (phase.phase === 'planning') label = 'Planning chain…'
+    else if (phase.phase === 'opening-remote-kv') label = 'Opening remote KV sessions…'
+    else if (phase.phase === 'prefilling') {
+      const tot = phase.totalTokens ?? 0
+      const cur = phase.prefilledTokens
+      // We currently emit prefilledTokens only when it's known mid-stream;
+      // most paths just emit totalTokens. Show count if granular, size otherwise.
+      label = cur !== undefined && tot > 0
+        ? `Rebuilding context… (${cur}/${tot} tokens)`
+        : tot > 0
+          ? `Rebuilding context… (${tot} tokens)`
+          : 'Rebuilding context…'
+    } else if (phase.phase === 'error') {
+      label = `Error: ${phase.error ?? 'unknown'}`
+    }
+  }
+
   return (
     <div className={styles.thinkingRow}>
       <div className={styles.thinkingBubble}>
@@ -62,7 +81,7 @@ function ThinkingIndicator(): React.JSX.Element {
             {SPINNER_FRAMES[frame]}
           </span>
           <span className={styles.thinkingMsg}>
-            {THINKING_MESSAGES[msgIdx]}
+            {label}
           </span>
           <span className={styles.thinkingElapsed}>
             {elapsed}s
@@ -154,16 +173,15 @@ function MessageBubble({ msg }: { msg: ChatMessage }): React.JSX.Element {
 }
 
 interface ChatPanelProps {
-  sessions: ChatSession[]
+  summaries: SessionSummary[]
   activeSessionId: string | null
   onSelectSession: (id: string) => void
-  onCreateSession: () => void
-  onUpdateSession: (id: string, patch: Partial<ChatSession>) => void
-  onDeleteSession: (id: string) => void
+  onCreateSession: () => Promise<void>
+  onDeleteSession: (id: string) => Promise<void>
 }
 
 export default function ChatPanel({
-  sessions, activeSessionId, onSelectSession, onCreateSession, onUpdateSession, onDeleteSession,
+  summaries, activeSessionId, onSelectSession, onCreateSession, onDeleteSession,
 }: ChatPanelProps): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [maxTokens, setMaxTokens] = useState(512)
@@ -172,10 +190,38 @@ export default function ChatPanel({
   const [coverageLoading, setCoverageLoading] = useState(false)
   const [activeModel, setActiveModel] = useState<ModelInfo | null>(null)
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
+  const [phase, setPhase] = useState<SessionPhaseEvent | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { addToast } = useToast()
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) ?? null
+  // Fetch active session content from main when selection changes.
+  useEffect(() => {
+    if (!activeSessionId) { setActiveSession(null); return }
+    let cancelled = false
+    window.opencoral.getSession(activeSessionId).then(s => {
+      if (!cancelled) setActiveSession(s)
+    })
+    return () => { cancelled = true }
+  }, [activeSessionId])
+
+  // Subscribe to session-phase events for the rebuilding-context indicator.
+  useEffect(() => {
+    const off = window.opencoral.onSessionPhase((e) => {
+      if (e.sessionId !== activeSessionId) return
+      setPhase(e.phase === 'ready' ? null : e)
+    })
+    return off
+  }, [activeSessionId])
+
+  // Refresh active session when it gets updated (auto-title, post-turn refresh).
+  useEffect(() => {
+    const off = window.opencoral.onSessionUpdated((s) => {
+      if (s.id !== activeSessionId) return
+      window.opencoral.getSession(s.id).then(fresh => setActiveSession(fresh))
+    })
+    return off
+  }, [activeSessionId])
 
   const checkCoverage = useCallback(async () => {
     setCoverageLoading(true)
@@ -210,50 +256,24 @@ export default function ChatPanel({
     const text = draft.trim()
     if (!text || sendingSessionId || coverage?.complete !== true || !activeSession) return
 
-    const userMsg: ChatMessage = {
-      id: `${Date.now()}-user`,
-      role: 'user',
-      text,
-      timestamp: Date.now(),
-    }
-
-    // Auto-title from first message
-    const isFirst = activeSession.messages.length === 0
-    const newMessages = [...activeSession.messages, userMsg]
-    const patch: Partial<ChatSession> = { messages: newMessages }
-    if (isFirst) {
-      patch.title = text.length > 40 ? text.slice(0, 40) + '…' : text
-    }
-    onUpdateSession(activeSession.id, patch)
-
     setDraft('')
     setSendingSessionId(activeSession.id)
 
     try {
-      const result = await window.opencoral.runInference(text, maxTokens)
-      const assistantMsg: ChatMessage = {
-        id: `${Date.now()}-assistant`,
-        role: 'assistant',
-        text: result.generatedText || '(no output)',
-        result,
-        timestamp: Date.now(),
-      }
-      onUpdateSession(activeSession.id, { messages: [...newMessages, assistantMsg] })
+      await window.opencoral.sendTurn(activeSession.id, text, maxTokens)
+      // Server-side persisted both messages; the onSessionUpdated subscription
+      // above will refetch the session and update the view.
     } catch (e) {
       const errorText = e instanceof Error ? e.message : String(e)
       addToast(errorText, 'error')
-      const errMsg: ChatMessage = {
-        id: `${Date.now()}-error`,
-        role: 'assistant',
-        text: 'Inference failed.',
-        error: errorText,
-        timestamp: Date.now(),
-      }
-      onUpdateSession(activeSession.id, { messages: [...newMessages, errMsg] })
+      // The user message was already persisted by main; refetch so the UI reflects it.
+      const fresh = await window.opencoral.getSession(activeSession.id)
+      setActiveSession(fresh)
     } finally {
       setSendingSessionId(null)
+      setPhase(null)
     }
-  }, [draft, maxTokens, sendingSessionId, coverage, activeSession, onUpdateSession])
+  }, [draft, maxTokens, sendingSessionId, coverage, activeSession, addToast])
 
   const sending = sendingSessionId !== null
   const sendingHere = sendingSessionId !== null && sendingSessionId === activeSessionId
@@ -323,20 +343,22 @@ export default function ChatPanel({
         </div>
 
         <div className={styles.sidebarList}>
-          {sessions.length === 0 && (
+          {summaries.length === 0 && (
             <div className={styles.sidebarEmpty}>
               No sessions yet.<br />Click + to start.
             </div>
           )}
-          {sessions.map(s => (
+          {summaries.map(s => (
             <div key={s.id} className={styles.sessionRow}>
               <button
                 onClick={() => onSelectSession(s.id)}
                 className={s.id === activeSessionId ? styles.sessionBtnActive : styles.sessionBtn}
+                style={s.corrupt ? { opacity: 0.5 } : undefined}
+                title={s.corrupt ? 'Session file is unreadable' : undefined}
               >
                 <div className={styles.sessionBtnTitle}>{s.title}</div>
                 <div className={styles.sessionBtnMeta}>
-                  {s.messages.length} msgs · {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {s.messageCount} msgs · {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </button>
               <button
@@ -382,7 +404,7 @@ export default function ChatPanel({
             {activeSession?.messages.map(msg => (
               <MessageBubble key={msg.id} msg={msg} />
             ))}
-            {sendingHere && <ThinkingIndicator />}
+            {sendingHere && <ThinkingIndicator phase={phase} />}
           </div>
 
           {/* Input area */}

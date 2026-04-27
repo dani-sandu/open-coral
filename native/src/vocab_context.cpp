@@ -80,6 +80,39 @@ std::string vocab_apply_chat_template(VocabContext* vc, const std::string& user_
     return result;
 }
 
+std::string vocab_apply_chat_template_multi(VocabContext* vc, const std::vector<ChatTurn>& turns) {
+    const char* tmpl = llama_model_chat_template(vc->model, nullptr);
+    if (!tmpl) {
+        // The substring "no embedded chat template" is the sentinel detected by
+        // src/inference/native-tokenizer.ts::encodeChatMulti to throw a typed
+        // ChatTemplateUnavailableError in JS. Keep these in sync.
+        throw std::runtime_error("vocab_apply_chat_template_multi: model has no embedded chat template");
+    }
+
+    if (turns.empty()) {
+        throw std::runtime_error("vocab_apply_chat_template_multi: turns must not be empty");
+    }
+
+    std::vector<llama_chat_message> msgs;
+    msgs.reserve(turns.size());
+    for (const auto& t : turns) {
+        msgs.push_back({ t.role.c_str(), t.content.c_str() });
+    }
+
+    int32_t n = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, nullptr, 0);
+    if (n < 0) {
+        throw std::runtime_error("vocab_apply_chat_template_multi: template application failed");
+    }
+
+    std::string result((size_t)n, '\0');
+    int32_t written = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, result.data(), n);
+    if (written < 0) {
+        throw std::runtime_error("vocab_apply_chat_template_multi: template write failed");
+    }
+    result.resize((size_t)written);
+    return result;
+}
+
 VocabSpecialTokens vocab_get_special_tokens(VocabContext* vc) {
     const llama_vocab* vocab = llama_model_get_vocab(vc->model);
     VocabSpecialTokens st;

@@ -522,6 +522,50 @@ Napi::Value NativeApplyChatTemplate(const Napi::CallbackInfo& info) {
     }
 }
 
+// ── nativeApplyChatTemplateMulti ──────────────────────────────────────────────
+Napi::Value NativeApplyChatTemplateMulti(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsArray()) {
+        Napi::TypeError::New(env,
+            "nativeApplyChatTemplateMulti(handle: number, turns: Array<{role,content}>)"
+        ).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    uint32_t handle = info[0].As<Napi::Number>().Uint32Value();
+    auto it = g_vocab_handles.find(handle);
+    if (it == g_vocab_handles.end()) {
+        Napi::Error::New(env, "Invalid vocab handle").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    Napi::Array arr = info[1].As<Napi::Array>();
+    std::vector<ChatTurn> turns;
+    turns.reserve(arr.Length());
+    for (uint32_t i = 0; i < arr.Length(); i++) {
+        Napi::Value v = arr.Get(i);
+        if (!v.IsObject()) {
+            Napi::TypeError::New(env, "turns[i] must be {role,content}").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+        Napi::Object obj = v.As<Napi::Object>();
+        Napi::Value role = obj.Get("role");
+        Napi::Value content = obj.Get("content");
+        if (!role.IsString() || !content.IsString()) {
+            Napi::TypeError::New(env, "turns[i].role and .content must be strings").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+        turns.push_back({ role.As<Napi::String>().Utf8Value(), content.As<Napi::String>().Utf8Value() });
+    }
+
+    try {
+        std::string result = vocab_apply_chat_template_multi(it->second, turns);
+        return Napi::String::New(env, result);
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
 // ── nativeGetSpecialTokens ────────────────────────────────────────────────────
 Napi::Value NativeGetSpecialTokens(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -565,7 +609,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("freeVocab",               Napi::Function::New(env, FreeVocab));
     exports.Set("nativeTokenize",          Napi::Function::New(env, NativeTokenize));
     exports.Set("nativeTokenToPiece",      Napi::Function::New(env, NativeTokenToPiece));
-    exports.Set("nativeApplyChatTemplate", Napi::Function::New(env, NativeApplyChatTemplate));
+    exports.Set("nativeApplyChatTemplate",      Napi::Function::New(env, NativeApplyChatTemplate));
+    exports.Set("nativeApplyChatTemplateMulti", Napi::Function::New(env, NativeApplyChatTemplateMulti));
     exports.Set("nativeGetSpecialTokens",  Napi::Function::New(env, NativeGetSpecialTokens));
     return exports;
 }

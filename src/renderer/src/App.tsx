@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import NetworkView from './components/Network/NetworkView'
 import ModelsPanel from './components/Model/ModelsPanel'
 import ChatPanel from './components/Chat/ChatPanel'
-import type { ChatSession } from './types'
+import type { SessionSummary } from './types'
 import './components/shared/theme.css'
 import styles from './App.module.css'
-import ToastProvider from './components/Toast/ToastProvider'
+import ToastProvider, { useToast } from './components/Toast/ToastProvider'
 
 type Tab = 'network' | 'models' | 'chat'
 
@@ -15,42 +15,51 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'chat', label: 'Chat' },
 ]
 
-export default function App(): React.JSX.Element {
+function AppInner(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('network')
-
-  // ── Chat session state (persists across tab switches) ─────────────────────
-  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [summaries, setSummaries] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const { addToast } = useToast()
 
-  const createSession = useCallback(() => {
-    const s: ChatSession = {
-      id: `session-${Date.now()}`,
-      title: 'New chat',
-      messages: [],
-      createdAt: Date.now(),
-    }
-    setSessions(prev => [s, ...prev])
+  useEffect(() => {
+    let cancelled = false
+    window.opencoral.listSessions().then(list => {
+      if (!cancelled) setSummaries(list)
+    })
+    const offUpdated = window.opencoral.onSessionUpdated((s) => {
+      setSummaries(prev => {
+        const i = prev.findIndex(x => x.id === s.id)
+        if (i === -1) return [s, ...prev]
+        const next = prev.slice()
+        next[i] = s
+        return next
+      })
+    })
+    const offDeleted = window.opencoral.onSessionDeleted((id) => {
+      setSummaries(prev => prev.filter(x => x.id !== id))
+      setActiveSessionId(prev => prev === id ? null : prev)
+    })
+    const offInvalidated = window.opencoral.onSessionInvalidated(({ reason }) => {
+      addToast(`Session context lost (${reason}) — will rebuild on next message`, 'info')
+    })
+    return () => { cancelled = true; offUpdated(); offDeleted(); offInvalidated() }
+  }, [addToast])
+
+  const createSession = useCallback(async () => {
+    const s = await window.opencoral.createSession()
     setActiveSessionId(s.id)
   }, [])
 
-  const updateSession = useCallback((id: string, patch: Partial<ChatSession>) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s))
-  }, [])
-
-  const deleteSession = useCallback((id: string) => {
-    setSessions(prev => prev.filter(s => s.id !== id))
-    setActiveSessionId(prev => prev === id ? null : prev)
+  const deleteSession = useCallback(async (id: string) => {
+    await window.opencoral.deleteSession(id)
   }, [])
 
   return (
-    <ToastProvider>
-      <div className={styles.app}>
-      {/* Header */}
+    <div className={styles.app}>
       <div className={styles.header}>
         <span className={styles.headerTitle}>OpenCoral</span>
       </div>
 
-      {/* Tab bar */}
       <div className={styles.tabBar}>
         {TABS.map(t => (
           <button
@@ -63,7 +72,6 @@ export default function App(): React.JSX.Element {
         ))}
       </div>
 
-      {/* Tab content — all tabs stay mounted, hidden via display:none to preserve state */}
       <div className={styles.tabContent}>
         <div className={tab === 'network' ? styles.tabPane : styles.tabPaneHidden}>
           <NetworkView />
@@ -73,16 +81,22 @@ export default function App(): React.JSX.Element {
         </div>
         <div className={tab === 'chat' ? styles.tabPane : styles.tabPaneHidden}>
           <ChatPanel
-            sessions={sessions}
+            summaries={summaries}
             activeSessionId={activeSessionId}
             onSelectSession={setActiveSessionId}
             onCreateSession={createSession}
-            onUpdateSession={updateSession}
             onDeleteSession={deleteSession}
           />
         </div>
       </div>
-      </div>
+    </div>
+  )
+}
+
+export default function App(): React.JSX.Element {
+  return (
+    <ToastProvider>
+      <AppInner />
     </ToastProvider>
   )
 }
