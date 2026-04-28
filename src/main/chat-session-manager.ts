@@ -164,8 +164,19 @@ export class ChatSessionManager {
     const commonLen = longestCommonPrefix(active.tokenizedHistory, afterTokens)
 
     if (commonLen < active.nPast) {
-      await runner.sessionRollback(active.kvSessionId, commonLen)
-      active.nPast = commonLen
+      try {
+        await runner.sessionRollback(active.kvSessionId, commonLen)
+        active.nPast = commonLen
+      } catch {
+        // Hybrid/recurrent models (e.g. Qwen3.5) can't do partial KV rollback.
+        // The native layer cleared the KV to 0; re-prefill up to commonLen.
+        active.nPast = 0
+        active.backend.nPast = 0
+        for (let i = 0; i < commonLen; i += PREFILL_CHUNK_SIZE) {
+          await active.backend.forwardAll(afterTokens.subarray(i, Math.min(i + PREFILL_CHUNK_SIZE, commonLen)))
+        }
+        active.nPast = commonLen
+      }
     }
 
     const newTokens = afterTokens.slice(commonLen)

@@ -99,13 +99,18 @@ export class SpeculativeSession {
     const ngramCache = new NgramCache(ngramSize, draftMax)
     if (enabled) ngramCache.buildFromTokens(allTokens)
 
+    // Hybrid/recurrent models (e.g. Qwen3.5) can't do partial KV rollback.
+    // If the first rollback attempt fails we fall back to single-token generation.
+    let speculationEnabled = enabled
+    const SPEC_PREFILL_CHUNK = 256
+
     let totalGenerated = 0
 
     while (totalGenerated < maxTokens) {
       if (nextToken === this.eosTokenId) break
       if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
 
-      const draftTokens = enabled ? ngramCache.lookup([...allTokens, nextToken]) : []
+      const draftTokens = speculationEnabled ? ngramCache.lookup([...allTokens, nextToken]) : []
       const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
 
       if (maxDrafts === 0) {
@@ -159,7 +164,19 @@ export class SpeculativeSession {
             // then rollback KV cache to discard the unaccepted draft slots.
             nextToken = sampleTopK(allLogits, vocabSize, i * vocabSize, temperature, topK)
             const rollbackTo = kvPositionAfterBatch - (maxDrafts - accepted)
-            await backend.rollback(rollbackTo)
+            try {
+              await backend.rollback(rollbackTo)
+            } catch {
+              // Hybrid/recurrent models (e.g. Qwen3.5) can't partially roll back the KV
+              // cache.  The native layer cleared it to 0; re-prefill from the accepted
+              // prefix so the KV is consistent again, then disable speculation.
+              backend.nPast = 0
+              const accepted_tokens = new Int32Array(allTokens.slice(0, rollbackTo))
+              for (let ri = 0; ri < rollbackTo; ri += SPEC_PREFILL_CHUNK) {
+                await backend.forwardAll(accepted_tokens.subarray(ri, Math.min(ri + SPEC_PREFILL_CHUNK, rollbackTo)))
+              }
+              speculationEnabled = false
+            }
             rejected = true
             break
           }

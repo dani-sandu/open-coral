@@ -30,6 +30,10 @@ static LlamaBlockContext* lbc_load_internal(
     cp.n_ctx           = LBC_DEFAULT_CTX;
     cp.n_batch         = LBC_DEFAULT_CTX;
     cp.n_seq_max       = 64; // seq 0 reserved for stateless; sessions use 1..63
+    // kv_unified=true keeps n_ctx_seq == n_ctx instead of n_ctx/n_seq_max.
+    // Without this, llama.cpp computes n_ctx_seq = 8192/64 = 128 (padded to 256),
+    // giving each session only 256 full-attention KV slots — exhausted after ~3 turns.
+    cp.kv_unified      = true;
     cp.n_threads       = g_n_threads;
     cp.n_threads_batch = g_n_threads;
     cp.offload_kqv     = false;
@@ -379,10 +383,21 @@ void lbc_session_rollback(LlamaBlockContext* lbc, int session_id, int new_n_past
                                  " out of range [0, " + std::to_string(info.n_past) + "]");
 
     if (new_n_past < info.n_past) {
-        llama_memory_seq_rm(
+        bool ok = llama_memory_seq_rm(
             llama_get_memory(lbc->ctx),
             (llama_seq_id)info.seq_id,
             new_n_past, -1);
+        if (!ok) {
+            // Hybrid/recurrent models (e.g. Qwen3.5) can't partially remove KV entries
+            // that include the recurrent tail position.  Full-clear the sequence so the
+            // KV state stays consistent, then throw so the caller can re-prefill from 0.
+            llama_memory_seq_rm(llama_get_memory(lbc->ctx), (llama_seq_id)info.seq_id, 0, -1);
+            info.n_past = 0;
+            throw std::runtime_error(
+                "lbc_session_rollback: partial KV removal not supported for session " +
+                std::to_string(session_id) + " (new_n_past=" + std::to_string(new_n_past) +
+                "); KV cleared to 0 — caller must re-prefill");
+        }
         info.n_past = new_n_past;
     }
 }

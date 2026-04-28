@@ -259,6 +259,12 @@ export default function ChatPanel({
     setDraft('')
     setSendingSessionId(activeSession.id)
 
+    // Optimistically show the user message immediately, before the round-trip.
+    setActiveSession(prev => prev ? {
+      ...prev,
+      messages: [...prev.messages, { id: `optimistic-${Date.now()}`, role: 'user', text, timestamp: Date.now() }],
+    } : prev)
+
     try {
       await window.opencoral.sendTurn(activeSession.id, text, maxTokens)
       // Server-side persisted both messages; the onSessionUpdated subscription
