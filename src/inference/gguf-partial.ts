@@ -85,56 +85,47 @@ function encodeGGUFString(s: string): Buffer {
 }
 
 /**
- * Build a partial GGUF file containing only the specified tensors.
- *
- * @param originalHeaderBuf  The original GGUF file header bytes (first N MB)
- * @param header             Parsed header from parseGGUFHeader()
- * @param selectedTensors    Subset of header.tensors to include
- * @param tensorDataChunks   Map from tensor name → downloaded data buffer
- * @returns                  Complete partial GGUF file as a single Buffer
+ * Build the header-only portion of a partial GGUF (magic + metadata + tensor infos + padding).
+ * The caller writes tensor data directly to disk after this header.
+ * Returns the header buffer and the per-tensor alignment padding sizes.
  */
-export function buildPartialGGUF(
+export function buildPartialGGUFHeader(
   originalHeaderBuf: Buffer,
   header: GGUFHeader,
   selectedTensors: GGUFTensorInfo[],
-  tensorDataChunks: Map<string, Buffer>,
-): Buffer {
+): { headerBuf: Buffer; tensorPadding: number[] } {
   const parts: Buffer[] = []
 
   // ── 1. File header: magic + version + n_tensors + n_kv ──────────────────
   const fileHeader = Buffer.allocUnsafe(24)
   fileHeader.write('GGUF', 0, 4, 'ascii')
   fileHeader.writeUInt32LE(header.version, 4)
-  fileHeader.writeBigUInt64LE(BigInt(selectedTensors.length), 8)   // reduced tensor count
+  fileHeader.writeBigUInt64LE(BigInt(selectedTensors.length), 8)
   fileHeader.writeBigUInt64LE(BigInt(header.metadata.length), 16)
   parts.push(fileHeader)
 
   // ── 2. Metadata KV pairs — copy raw bytes from original header ──────────
-  // Re-serializing is error-prone (tokenizer arrays, nested types, etc.).
-  // The metadata region is bytes [24 .. metadataEndOffset) in the original buffer.
   parts.push(originalHeaderBuf.subarray(24, header.metadataEndOffset))
 
-  // ── 3. Tensor info entries (only for selected tensors) ─────────────────
-  // We'll pack tensor data contiguously, so compute new offsets.
+  // ── 3. Tensor info entries with new packed offsets ───────────────────────
+  const tensorPadding: number[] = []
   let dataOffset = 0n
   for (const t of selectedTensors) {
-    // name
     parts.push(encodeGGUFString(t.name))
-    // n_dims
     const dimsBuf = Buffer.allocUnsafe(4 + t.shape.length * 8 + 4 + 8)
     let off = 0
     dimsBuf.writeUInt32LE(t.shape.length, off); off += 4
     for (const dim of t.shape) {
       dimsBuf.writeBigUInt64LE(dim, off); off += 8
     }
-    // type
     dimsBuf.writeUInt32LE(t.type, off); off += 4
-    // data offset (relative to data region start)
     dimsBuf.writeBigUInt64LE(dataOffset, off); off += 8
     parts.push(dimsBuf.subarray(0, off))
 
     const size = tensorDataSize(t.shape, t.type)
-    dataOffset += BigInt(align(size, GGUF_ALIGNMENT))
+    const paddedSize = align(size, GGUF_ALIGNMENT)
+    tensorPadding.push(paddedSize - size)
+    dataOffset += BigInt(paddedSize)
   }
 
   // ── 4. Alignment padding to start of data region ───────────────────────
@@ -144,19 +135,7 @@ export function buildPartialGGUF(
     parts.push(Buffer.alloc(alignedHeaderSize - headerSize))
   }
 
-  // ── 5. Tensor data — packed contiguously, each aligned ─────────────────
-  for (const t of selectedTensors) {
-    const data = tensorDataChunks.get(t.name)
-    if (!data) throw new Error(`Missing data for tensor: ${t.name}`)
-    parts.push(data)
-    // Alignment padding
-    const aligned = align(data.length, GGUF_ALIGNMENT)
-    if (aligned > data.length) {
-      parts.push(Buffer.alloc(aligned - data.length))
-    }
-  }
-
-  return Buffer.concat(parts)
+  return { headerBuf: Buffer.concat(parts), tensorPadding }
 }
 
 /**

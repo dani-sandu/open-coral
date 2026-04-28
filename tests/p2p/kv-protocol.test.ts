@@ -95,4 +95,87 @@ describe('KV session protocol — persistent streams', () => {
     expect(out.length).toBe(256 * 128)
     await client.close()
   })
+
+  it('rollback resets handler state', async () => {
+    let lastRollbackSession: string | undefined
+    let lastRollbackNPast: number | undefined
+
+    const handler: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onRollback: async (sessionId, newNPast) => {
+        lastRollbackSession = sessionId
+        lastRollbackNPast = newNPast
+      },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handler)
+
+    const client = await KVSessionClient.open(
+      nodeA.libp2p, nodeB.libp2p.peerId, 'sess-rb', 128,
+    )
+
+    await client.rollback(5)
+
+    expect(lastRollbackSession).toBe('sess-rb')
+    expect(lastRollbackNPast).toBe(5)
+
+    await client.close()
+  })
+
+  it('forwardAll returns nTokens × vocabSize floats', async () => {
+    const vocabSize = 8
+    const nTokens = 3
+    const nEmbd = 4
+
+    const handler: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+      onForwardAll: async (_sid, _input, n) => {
+        return new Float32Array(n * vocabSize).fill(0.42)
+      },
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handler)
+
+    const client = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'sess-fa', 128)
+    const input = new Float32Array(nTokens * nEmbd).fill(1.0)
+    const out = await client.forwardAll(input, nTokens, nEmbd)
+
+    expect(out.length).toBe(nTokens * vocabSize)
+    for (let i = 0; i < out.length; i++) expect(out[i]).toBeCloseTo(0.42, 5)
+
+    await client.close()
+  })
+
+  it('forwardAll returns STATUS_ERR when onForwardAll not implemented, session remains usable', async () => {
+    const handler: KVSessionHandler = {
+      onOpen: async () => ({ ok: true }),
+      onForward: async (_sid, input) => input,
+      onClose: async () => {},
+    }
+
+    try { await nodeB.libp2p.unhandle(KV_PROTOCOL) } catch {}
+    await registerKVHandler(nodeB.libp2p, handler)
+
+    const client = await KVSessionClient.open(nodeA.libp2p, nodeB.libp2p.peerId, 'sess-fa-err', 128)
+    const input = new Float32Array(4).fill(1.0)
+
+    let threwError = false
+    try {
+      await client.forwardAll(input, 1, 4)
+    } catch {
+      threwError = true
+    }
+    expect(threwError).toBe(true)
+
+    // After STATUS_ERR the stream should still be alive — other ops must succeed
+    const out = await client.forward(input, 1, 4)
+    expect(out.length).toBe(4)
+    await client.close()
+  })
 })

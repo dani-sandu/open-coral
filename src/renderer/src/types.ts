@@ -11,6 +11,7 @@ export interface ModelInfo {
   hfFilename?: string
   /** True when loaded from a shim GGUF (no block tensors) */
   shimOnly?: boolean
+  shardFiles?: string[]
 }
 
 export interface HostingState {
@@ -46,6 +47,9 @@ export interface InferenceResult {
   nEmbd: number
   chainSteps: { peerId: string; blockStart: number; blockEnd: number; durationMs: number }[]
   totalDurationMs: number
+  specDraftTokens?: number
+  specAcceptedTokens?: number
+  specAcceptanceRate?: number
 }
 
 export interface ChatMessage {
@@ -62,15 +66,7 @@ export interface ChatSession {
   title: string
   messages: ChatMessage[]
   createdAt: number
-}
-
-export interface PeerModelInfo {
-  repoId: string
-  hfFilename: string
-  blockStart: number
-  blockEnd: number
-  totalBlocks: number
-  architecture: string
+  updatedAt: number
 }
 
 export interface NetworkState {
@@ -97,6 +93,15 @@ export interface HFFileInfo {
   size: number
 }
 
+// NOTE: Keep in sync with ShardSet in src/inference/shard-utils.ts.
+// Duplicated intentionally — the renderer cannot import main-process modules.
+export interface ShardSet {
+  canonical: string
+  shardFiles: string[]
+  totalShards: number
+  combinedSize: number
+}
+
 export interface DownloadProgress {
   file: string
   downloadedBytes: number
@@ -105,6 +110,8 @@ export interface DownloadProgress {
   done: boolean
   error?: string
   localPath?: string
+  currentShard?: number
+  totalShards?: number
 }
 
 export interface HFModelPreview {
@@ -155,7 +162,32 @@ export interface LocalModelEntry {
   hfFilename?: string
   blockStart: number | null
   blockEnd: number | null
+  shardFiles?: string[]
 }
+
+export interface SessionSummary {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+  corrupt?: boolean
+}
+
+export interface SessionPhaseEvent {
+  sessionId: string
+  phase: 'planning' | 'opening-remote-kv' | 'prefilling' | 'ready' | 'error'
+  prefilledTokens?: number
+  totalTokens?: number
+  error?: string
+}
+
+export interface SessionInvalidationEvent {
+  sessionId: string
+  reason: 'peer-drop' | 'model-change'
+}
+
+export type Unsubscribe = () => void
 
 declare global {
   interface Window {
@@ -172,16 +204,27 @@ declare global {
       runInference: (prompt: string, maxTokens: number) => Promise<InferenceResult>
       hfSearch: (query: string) => Promise<HFModelResult[]>
       hfListFiles: (repoId: string) => Promise<HFFileInfo[]>
-      hfDownload: (repoId: string, filename: string) => Promise<string>
+      hfDownload: (repoId: string, filenames: string[]) => Promise<string>
       hfDownloadProgress: () => Promise<DownloadProgress | null>
       hfCancelDownload: () => Promise<void>
       hfPreviewModel: (repoId: string, filename: string) => Promise<HFModelPreview>
-      hfEstimateBlocks: (blockStart: number, blockEnd: number) => Promise<BlockEstimate>
+      hfEstimateBlocks: (filename: string, blockStart: number, blockEnd: number) => Promise<BlockEstimate>
       hfDownloadPartial: (repoId: string, filename: string, blockStart: number, blockEnd: number) => Promise<string>
       hfDownloadShim: (repoId: string, filename: string) => Promise<string>
       discoverNetworkModels: () => Promise<NetworkModelEntry[]>
       loadModelByHFIdentity: (repoId: string, hfFilename: string) => Promise<ModelInfo>
       listLocalModels: () => Promise<LocalModelEntry[]>
+      // Chat sessions
+      listSessions: () => Promise<SessionSummary[]>
+      getSession: (id: string) => Promise<ChatSession | null>
+      createSession: () => Promise<SessionSummary>
+      sendTurn: (sessionId: string, userText: string, maxTokens: number) => Promise<{ generatedText: string; trace: InferenceResult }>
+      deleteSession: (id: string) => Promise<void>
+      renameSession: (id: string, title: string) => Promise<void>
+      onSessionUpdated: (handler: (s: SessionSummary) => void) => Unsubscribe
+      onSessionDeleted: (handler: (id: string) => void) => Unsubscribe
+      onSessionPhase: (handler: (e: SessionPhaseEvent) => void) => Unsubscribe
+      onSessionInvalidated: (handler: (e: SessionInvalidationEvent) => void) => Unsubscribe
     }
   }
 }

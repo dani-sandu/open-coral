@@ -24,7 +24,9 @@ export default function ModelDownload({
           Downloading from Hugging Face
         </div>
         <div style={{ color: 'var(--dim)', fontSize: 'var(--fs-sm)', marginBottom: 16, fontFamily: 'var(--font-mono)' }}>
-          {progress?.file ?? ''}
+          {progress?.totalShards && progress.totalShards > 1
+            ? `Shard ${progress.currentShard ?? 1} of ${progress.totalShards} — ${progress.file}`
+            : (progress?.file ?? '')}
         </div>
 
         <div style={{

@@ -1,5 +1,9 @@
 preload = ["./scripts/crypto-polyfill.ts"]
 
+[test]
+root = "."
+pathIgnorePatterns = ["native/build/**"]
+
 [install]
 os = "*"
 cpu = "*"

@@ -1,5 +1,6 @@
 import React from 'react'
-import type { HFModelPreview, HFFileInfo, BlockEstimate } from '../../types'
+import type { HFModelPreview, HFFileInfo, BlockEstimate, ShardSet } from '../../types'
+import { isShardSet } from '../../../../inference/shard-utils'
 import { fmt } from '../shared/format-utils'
 import cmp from '../shared/components.module.css'
 
@@ -7,7 +8,7 @@ import cmp from '../shared/components.module.css'
 
 export interface ModelPreviewProps {
   preview: HFModelPreview | null
-  selectedFile: HFFileInfo | null
+  selectedFile: HFFileInfo | ShardSet | null
   repoId: string
   loading: boolean
   blockStart: number
@@ -38,20 +39,20 @@ export default function ModelPreview({
         </div>
       )}
 
-      {preview && !loading && (
+      {preview && !loading && selectedFile && (
         <div>
           <div className={cmp.card} style={{
             fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-md)', marginBottom: 16,
           }}>
             <div style={{ color: 'var(--accent)', fontWeight: 600, fontSize: 'var(--fs-lg)', marginBottom: 8 }}>
-              {selectedFile?.rfilename}
+              {isShardSet(selectedFile) ? selectedFile.canonical.replace(/-00001-of-\d+\.gguf$/i, '') : selectedFile.rfilename}
             </div>
             {([
               ['Architecture', preview.architecture],
               ['Total blocks', preview.totalBlocks],
               ['Hidden size', preview.hiddenSize],
               ['Heads', preview.headCount],
-              ['Full model', fmt(estimate?.fullSize ?? selectedFile?.size ?? 0)],
+              ['Full model', fmt(estimate?.fullSize ?? (isShardSet(selectedFile) ? selectedFile.combinedSize : selectedFile.size) ?? 0)],
             ] as [string, string | number][]).map(([label, value]) => (
               <div key={label} style={{
                 display: 'flex', justifyContent: 'space-between',
@@ -161,7 +162,7 @@ export default function ModelPreview({
               fontSize: 'var(--fs-md)',
             }}
           >
-            Download full model instead ({fmt(estimate?.fullSize ?? selectedFile?.size ?? 0)})
+            Download full model instead ({fmt(estimate?.fullSize ?? (isShardSet(selectedFile) ? selectedFile.combinedSize : selectedFile.size) ?? 0)})
           </button>
         </div>
       )}

@@ -61,14 +61,22 @@
       }
     ],
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Development"
     },
     "nsis": {
@@ -87,7 +95,7 @@
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "node-addon-api": "^8.7.0",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite": "6"
   }
 }

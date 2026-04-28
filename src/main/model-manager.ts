@@ -1,11 +1,12 @@
 import { app, dialog, ipcMain } from 'electron'
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, readdirSync } from 'fs'
-import { join } from 'path'
+import { join, basename, dirname } from 'path'
 import { parseGGUFHeader } from '../inference/gguf-parser'
 import type { GGUFHeader } from '../inference/types'
 import { countBlocks, extractShimTensors } from '../inference/block-extractor'
 import { downloadShimGGUF } from './huggingface'
 import { loadShimRunner, disposeShimRunner } from './block-host'
+import { parseShardInfo } from '../inference/shard-utils'
 
 export interface ModelInfo {
   path: string
@@ -22,10 +23,24 @@ export interface ModelInfo {
   hfFilename?: string
   /** True when this model was loaded from a shim GGUF (embed + output tensors only, no blocks) */
   shimOnly?: boolean
+  shardFiles?: string[]   // absolute paths, present for full multi-shard models
 }
 
 let currentModel: ModelInfo | null = null
 let currentGGUFHeader: GGUFHeader | null = null
+
+const modelChangeListeners = new Set<() => void>()
+
+export function subscribeModelChange(handler: () => void): () => void {
+  modelChangeListeners.add(handler)
+  return () => modelChangeListeners.delete(handler)
+}
+
+function fireModelChange(): void {
+  for (const fn of modelChangeListeners) {
+    try { fn() } catch (err) { console.error('[ModelManager] modelChange handler threw:', err) }
+  }
+}
 
 /**
  * Parse GGUF metadata from a file path.
@@ -76,6 +91,22 @@ function loadModelInfo(filePath: string): { info: ModelInfo; header: GGUFHeader 
     // ENOENT = no sidecar file — this is a local file with no HF identity
   }
 
+  // For shard-1 files: check if a manifest sidecar exists and load shardFiles
+  let shardFiles: string[] | undefined
+  const shardInfo = parseShardInfo(basename(filePath))
+  if (shardInfo && shardInfo.shardNo === 1) {
+    const manifestName = shardInfo.prefix + '.opencoral-meta.json'
+    const manifestPath = join(dirname(filePath), manifestName)
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      if (Array.isArray(manifest.shardFiles)) {
+        shardFiles = (manifest.shardFiles as string[]).map(
+          (f: string) => join(dirname(filePath), f)
+        )
+      }
+    } catch { /* no manifest — single-file model */ }
+  }
+
   return {
     info: {
       path: filePath,
@@ -88,6 +119,7 @@ function loadModelInfo(filePath: string): { info: ModelInfo; header: GGUFHeader 
       repoId,
       hfFilename,
       shimOnly: isShim || undefined,
+      shardFiles,
     },
     header,
   }
@@ -114,6 +146,7 @@ async function loadAndSet(filePath: string, repoId: string, hfFilename: string):
   }
 
   currentModel = model
+  fireModelChange()
   currentGGUFHeader = loaded.header
   return currentModel
 }
@@ -130,6 +163,7 @@ export function setupModelIPC(): void {
     await disposeShimRunner()
     const loaded = loadModelInfo(result.filePaths[0])
     currentModel = loaded.info
+    fireModelChange()
     currentGGUFHeader = loaded.header
     return currentModel
   })
@@ -138,6 +172,7 @@ export function setupModelIPC(): void {
     await disposeShimRunner()
     const loaded = loadModelInfo(filePath)
     currentModel = loaded.info
+    fireModelChange()
     currentGGUFHeader = loaded.header
     return currentModel
   })
@@ -169,8 +204,10 @@ export function setupModelIPC(): void {
       try {
         const meta = JSON.parse(readFileSync(sidecarPath, 'utf-8'))
         if (meta.repoId === repoId && meta.hfFilename === hfFilename) {
-          // The GGUF file path = sidecar path minus '.opencoral-meta.json'
-          const ggufPath = sidecarPath.slice(0, -'.opencoral-meta.json'.length)
+          // For sharded manifests, load from shard 1; for single-file, strip the sidecar suffix
+          const ggufPath = Array.isArray(meta.shardFiles) && meta.shardFiles.length > 0
+            ? join(modelsDir, meta.shardFiles[0])
+            : sidecarPath.slice(0, -'.opencoral-meta.json'.length)
           if (existsSync(ggufPath)) {
             return await loadAndSet(ggufPath, repoId, hfFilename)
           }
@@ -204,6 +241,7 @@ export interface LocalModelEntry {
   /** Block range present in the file (null = full model) */
   blockStart: number | null
   blockEnd: number | null
+  shardFiles?: string[]   // absolute paths, present for full multi-shard models
 }
 
 // Cache parsed model entries by file path + mtime to avoid re-reading 80MB headers on every call
@@ -218,16 +256,87 @@ export function listLocalModels(): LocalModelEntry[] {
   if (!existsSync(dir)) return []
 
   const entries: LocalModelEntry[] = []
-  const ggufFiles = readdirSync(dir).filter(f => f.endsWith('.gguf'))
   const seenPaths = new Set<string>()
+
+  // ── Pass 1: manifest-based entries (full multi-shard models) ───────────────
+  const manifestFiles = readdirSync(dir).filter(f =>
+    f.endsWith('.opencoral-meta.json') &&
+    !f.match(/-\d{5}-of-\d{5}\.gguf\.opencoral-meta\.json$/) &&
+    !f.match(/\.blocks-\d+-\d+\.gguf\.opencoral-meta\.json$/)
+  )
+  for (const mf of manifestFiles) {
+    const manifestPath = join(dir, mf)
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      if (!Array.isArray(manifest.shardFiles) || manifest.shardFiles.length < 2) continue
+
+      const shard1Filename: string = manifest.shardFiles[0]
+      const shard1Path = join(dir, shard1Filename)
+      if (!existsSync(shard1Path)) continue
+
+      const combinedSize = (manifest.shardFiles as string[]).reduce((sum: number, f: string) => {
+        try { return sum + statSync(join(dir, f)).size } catch { return sum }
+      }, 0)
+
+      seenPaths.add(shard1Path)
+      seenPaths.add(manifestPath)
+
+      const stat = statSync(manifestPath)
+      const cached = modelCache.get(manifestPath)
+      if (cached && cached.mtimeMs === stat.mtimeMs) {
+        entries.push(cached.entry)
+        continue
+      }
+
+      const fd = openSync(shard1Path, 'r')
+      const readSize = Math.min(80 * 1024 * 1024, statSync(shard1Path).size)
+      const headerBuf = Buffer.allocUnsafe(readSize)
+      readSync(fd, headerBuf, 0, headerBuf.length, 0)
+      closeSync(fd)
+
+      const header = parseGGUFHeader(headerBuf)
+      const metaGet = (key: string): unknown => header.metadata.find(m => m.key === key)?.value ?? null
+      const architecture = (metaGet('general.architecture') as string | null) ?? 'unknown'
+      const prefix = architecture === 'unknown' ? 'llama' : architecture
+      const hiddenSize = Number(metaGet(`${prefix}.embedding_length`) ?? metaGet('llama.embedding_length') ?? 0)
+      const headCount = Number(metaGet(`${prefix}.attention.head_count`) ?? metaGet('llama.attention.head_count') ?? 0)
+      const blockCountFromMeta = Number(metaGet(`${prefix}.block_count`) ?? metaGet('llama.block_count') ?? 0)
+      const totalBlocks = blockCountFromMeta > 0 ? blockCountFromMeta : 0
+
+      const entry: LocalModelEntry = {
+        path: shard1Path,
+        filename: shard1Filename,
+        architecture,
+        totalBlocks,
+        hiddenSize,
+        headCount,
+        fileSizeBytes: combinedSize,
+        repoId: typeof manifest.repoId === 'string' ? manifest.repoId : undefined,
+        hfFilename: typeof manifest.hfFilename === 'string' ? manifest.hfFilename : undefined,
+        blockStart: null,
+        blockEnd: null,
+        shardFiles: (manifest.shardFiles as string[]).map((f: string) => join(dir, f)),
+      }
+
+      modelCache.set(manifestPath, { mtimeMs: stat.mtimeMs, entry })
+      entries.push(entry)
+    } catch { /* skip malformed manifest */ }
+  }
+
+  // ── Pass 2: single-file .gguf entries (excludes shard files) ─────────────
+  const ggufFiles = readdirSync(dir).filter(f => {
+    if (!f.endsWith('.gguf')) return false
+    if (/\d{5}-of-\d{5}\.gguf$/i.test(f)) return false
+    if (/\.shim\.gguf$/i.test(f)) return false
+    return true
+  })
 
   for (const file of ggufFiles) {
     const filePath = join(dir, file)
+    if (seenPaths.has(filePath)) continue
     seenPaths.add(filePath)
     try {
       const stat = statSync(filePath)
-
-      // Check cache — skip parsing if file hasn't changed
       const cached = modelCache.get(filePath)
       if (cached && cached.mtimeMs === stat.mtimeMs) {
         entries.push(cached.entry)
@@ -262,7 +371,7 @@ export function listLocalModels(): LocalModelEntry[] {
         hfFilename = typeof sidecar.hfFilename  === 'string' ? sidecar.hfFilename  : undefined
         blockStart = typeof sidecar.blockStart  === 'number' ? sidecar.blockStart  : null
         blockEnd   = typeof sidecar.blockEnd    === 'number' ? sidecar.blockEnd    : null
-      } catch { /* ENOENT or parse error — no sidecar */ }
+      } catch { /* no sidecar */ }
 
       const entry: LocalModelEntry = {
         path: filePath,
@@ -280,9 +389,7 @@ export function listLocalModels(): LocalModelEntry[] {
 
       modelCache.set(filePath, { mtimeMs: stat.mtimeMs, entry })
       entries.push(entry)
-    } catch {
-      // Skip files that fail to parse
-    }
+    } catch { /* skip unparseable files */ }
   }
 
   // Evict stale cache entries
