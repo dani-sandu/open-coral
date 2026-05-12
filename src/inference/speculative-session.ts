@@ -192,4 +192,87 @@ export class SpeculativeSession {
 
     return { tokenIds: generatedIds, specDraftTokens, specAcceptedTokens }
   }
+
+  async *generateTokens(promptIds: Int32Array, maxTokens: number): AsyncGenerator<number> {
+    const { backend, config } = this
+    const { vocabSize } = backend
+    const { temperature, topK, enabled, ngramSize, draftMax } = config
+
+    const allTokens: number[] = Array.from(promptIds)
+    const ngramCache = new NgramCache(ngramSize, draftMax)
+    if (enabled) ngramCache.buildFromTokens(allTokens)
+
+    let speculationEnabled = enabled
+    const SPEC_PREFILL_CHUNK = 256
+    let totalGenerated = 0
+
+    const prefillLogits = await backend.forwardAll(promptIds)
+    let nextToken = sampleTopK(prefillLogits, vocabSize, (promptIds.length - 1) * vocabSize, temperature, topK)
+
+    while (totalGenerated < maxTokens) {
+      if (nextToken === this.eosTokenId) break
+      if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
+
+      const draftTokens = speculationEnabled ? ngramCache.lookup([...allTokens, nextToken]) : []
+      const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
+
+      if (maxDrafts === 0) {
+        yield nextToken
+        allTokens.push(nextToken)
+        if (enabled) ngramCache.addToken(nextToken, allTokens)
+        totalGenerated++
+        const logits = await backend.forwardOne(nextToken)
+        nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
+      } else {
+        const batch = new Int32Array(1 + maxDrafts)
+        batch[0] = nextToken
+        for (let i = 0; i < maxDrafts; i++) batch[i + 1] = draftTokens[i]
+
+        const allLogits = await backend.forwardAll(batch)
+        const kvPositionAfterBatch = backend.nPast
+
+        yield nextToken
+        allTokens.push(nextToken)
+        if (enabled) ngramCache.addToken(nextToken, allTokens)
+        totalGenerated++
+
+        let accepted = 0
+        let rejected = false
+        let terminated = false
+
+        for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
+          const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
+          if (Math.random() < pAccept) {
+            accepted++
+            if (draftTokens[i] === this.eosTokenId) { terminated = true; break }
+            if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
+            yield draftTokens[i]
+            allTokens.push(draftTokens[i])
+            if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
+            totalGenerated++
+          } else {
+            nextToken = sampleTopK(allLogits, vocabSize, i * vocabSize, temperature, topK)
+            const rollbackTo = kvPositionAfterBatch - (maxDrafts - accepted)
+            try {
+              await backend.rollback(rollbackTo)
+            } catch {
+              backend.nPast = 0
+              const acceptedTokens = new Int32Array(allTokens.slice(0, rollbackTo))
+              for (let ri = 0; ri < rollbackTo; ri += SPEC_PREFILL_CHUNK) {
+                await backend.forwardAll(acceptedTokens.subarray(ri, Math.min(ri + SPEC_PREFILL_CHUNK, rollbackTo)))
+              }
+              speculationEnabled = false
+            }
+            rejected = true
+            break
+          }
+        }
+
+        if (terminated) break
+        if (!rejected) {
+          nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, temperature, topK)
+        }
+      }
+    }
+  }
 }

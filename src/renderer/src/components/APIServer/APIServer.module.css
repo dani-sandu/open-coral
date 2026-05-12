@@ -1,0 +1,296 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  padding: var(--sp-lg);
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-md) var(--sp-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  flex-shrink: 0;
+}
+
+.cardTitle {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+/* ── Configuration fields ────────────────────────────────────────────────── */
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.fieldLabel {
+  font-size: var(--fs-sm);
+  color: var(--dim);
+  width: 58px;
+  flex-shrink: 0;
+}
+
+.fieldHint {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  opacity: 0.6;
+}
+
+.portInput {
+  width: 80px;
+  font-family: var(--font-mono) !important;
+  text-align: center;
+}
+
+.portInput:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.keyText {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s;
+}
+
+.keyText:hover {
+  border-color: var(--accent);
+}
+
+/* ── Endpoints ───────────────────────────────────────────────────────────── */
+
+.endpointList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.endpointRow {
+  display: grid;
+  grid-template-columns: 46px auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.endpointRow:hover {
+  background: var(--surface2);
+}
+
+.endpointRow:hover .copyHint {
+  opacity: 1;
+}
+
+.methodBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid;
+  text-align: center;
+  opacity: 0.85;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  flex-shrink: 0;
+}
+
+.endpointPath {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+.endpointLabel {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  padding-left: var(--sp-sm);
+}
+
+.copyHint {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.2s;
+  white-space: nowrap;
+}
+
+/* ── Copy feedback flash ─────────────────────────────────────────────────── */
+
+.copiedFlash {
+  color: var(--green) !important;
+  opacity: 1 !important;
+  border-color: color-mix(in srgb, var(--green) 40%, transparent) !important;
+}
+
+/* ── Claude Code integration ─────────────────────────────────────────────── */
+
+.claudeCard {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+}
+
+.claudeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.claudeInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.claudeTitle {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.claudeActiveBadge {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.claudeDesc {
+  font-size: var(--fs-xs);
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+/* ── Access log ──────────────────────────────────────────────────────────── */
+
+.logCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.logHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-md) var(--sp-lg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logCount {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 9px;
+  padding: 0 6px;
+  color: var(--dim);
+  font-family: var(--font-mono);
+}
+
+.logPane {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 4px 0;
+}
+
+.logEmpty {
+  display: block;
+  padding: 16px var(--sp-lg);
+  color: var(--dim);
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.logRow {
+  display: grid;
+  grid-template-columns: 70px 40px 1fr 36px 50px;
+  gap: 8px;
+  padding: 2px var(--sp-lg);
+  line-height: 1.6;
+  transition: background 0.1s;
+}
+
+.logRow:hover {
+  background: var(--surface2);
+}
+
+.logTime {
+  color: var(--dim);
+}
+
+.logMethod {
+  font-weight: 600;
+}
+
+.logPath {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logStatus {
+  text-align: right;
+  font-weight: 700;
+}
+
+.logMs {
+  color: var(--dim);
+  text-align: right;
+}

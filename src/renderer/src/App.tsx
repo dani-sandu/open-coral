@@ -3,17 +3,19 @@ import { useScrambleText } from './lib/anime'
 import NetworkView from './components/Network/NetworkView'
 import ModelsPanel from './components/Model/ModelsPanel'
 import ChatPanel from './components/Chat/ChatPanel'
+import APIServerView from './components/APIServer'
 import type { SessionSummary } from './types'
 import './components/shared/theme.css'
 import styles from './App.module.css'
 import ToastProvider, { useToast } from './components/Toast/ToastProvider'
 
-type Tab = 'network' | 'models' | 'chat'
+type Tab = 'network' | 'models' | 'chat' | 'api'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'models', label: 'Models' },
   { id: 'chat', label: 'Chat' },
+  { id: 'api', label: 'API Server' },
 ]
 
 function AppInner(): React.JSX.Element {
@@ -90,6 +92,9 @@ function AppInner(): React.JSX.Element {
             onCreateSession={createSession}
             onDeleteSession={deleteSession}
           />
+        </div>
+        <div className={tab === 'api' ? styles.tabPane : styles.tabPaneHidden}>
+          <APIServerView />
         </div>
       </div>
     </div>

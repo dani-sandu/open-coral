@@ -50,3 +50,32 @@ export async function runInference(opts: InferenceOptions): Promise<InferenceOut
     await runner.closeSession(sessionId)
   }
 }
+
+export interface InferenceStreamOptions {
+  runner: AsyncBlockRunner
+  tokenizer: NativeTokenizer
+  promptIds: Int32Array
+  maxTokens: number
+  requestId: string
+}
+
+export async function* runInferenceStream(opts: InferenceStreamOptions): AsyncGenerator<string> {
+  const { runner, tokenizer, promptIds, maxTokens, requestId } = opts
+  console.log(`[OpenCoral] [${requestId}] Stream inference, prompt tokens: ${promptIds.length}`)
+
+  const sessionId = await runner.openSession(promptIds.length + maxTokens)
+  try {
+    const backend = new LocalVerificationBackend(runner, sessionId)
+    const session = new SpeculativeSession(
+      backend,
+      tokenizer.eosTokenId,
+      tokenizer.endOfTurnTokenId,
+      DEFAULT_SPEC_CONFIG,
+    )
+    for await (const tokenId of session.generateTokens(promptIds, maxTokens)) {
+      yield await tokenizer.decodeToken(tokenId)
+    }
+  } finally {
+    await runner.closeSession(sessionId)
+  }
+}
