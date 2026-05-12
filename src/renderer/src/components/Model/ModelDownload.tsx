@@ -1,20 +1,36 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import type { DownloadProgress } from '../../types'
 import { fmt } from '../shared/format-utils'
 import cmp from '../shared/components.module.css'
-
-// ── Props ──────────────────────────────────────────────────────────────────────
+import { useAnimeRef, DURATION_PROGRESS } from '../../lib/anime'
 
 export interface ModelDownloadProps {
   progress: DownloadProgress | null
   onCancel: () => void
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
-
 export default function ModelDownload({
   progress, onCancel,
 }: ModelDownloadProps): React.JSX.Element {
+  const [barRef, animateBar] = useAnimeRef<HTMLDivElement>()
+  const pct = progress?.percent ?? 0
+
+  useEffect(() => {
+    animateBar({
+      width: `${pct}%`,
+      ease: 'outBack(1.5)',
+      duration: DURATION_PROGRESS,
+    })
+    if (pct >= 100) {
+      animateBar({
+        scaleY: [1, 1.35, 1],
+        ease: 'outElastic(1, 0.5)',
+        duration: 500,
+        delay: DURATION_PROGRESS,
+      })
+    }
+  }, [pct])
+
   return (
     <div>
       <div className={cmp.card} style={{
@@ -33,11 +49,14 @@ export default function ModelDownload({
           width: '100%', height: 8, background: 'var(--border)',
           borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: 8,
         }}>
-          <div style={{
-            width: `${progress?.percent ?? 0}%`, height: '100%',
-            background: 'var(--accent)', borderRadius: 'var(--radius-sm)',
-            transition: 'width 0.3s ease',
-          }} />
+          <div
+            ref={barRef}
+            style={{
+              width: `${pct}%`, height: '100%',
+              background: 'var(--accent)', borderRadius: 'var(--radius-sm)',
+              transformOrigin: 'left center',
+            }}
+          />
         </div>
 
         <div style={{
@@ -45,7 +64,7 @@ export default function ModelDownload({
           fontSize: 'var(--fs-sm)', color: 'var(--dim)', marginBottom: 16,
         }}>
           <span>{progress ? fmt(progress.downloadedBytes) : '0 KB'}</span>
-          <span>{progress?.percent ?? 0}%</span>
+          <span>{pct}%</span>
           <span>{progress ? fmt(progress.totalBytes) : '?'}</span>
         </div>
 

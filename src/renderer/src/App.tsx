@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
+import { useScrambleText } from './lib/anime'
 import NetworkView from './components/Network/NetworkView'
 import ModelsPanel from './components/Model/ModelsPanel'
 import ChatPanel from './components/Chat/ChatPanel'
@@ -54,10 +55,12 @@ function AppInner(): React.JSX.Element {
     await window.opencoral.deleteSession(id)
   }, [])
 
+  const titleText = useScrambleText('OpenCoral')
+
   return (
     <div className={styles.app}>
       <div className={styles.header}>
-        <span className={styles.headerTitle}>OpenCoral</span>
+        <span className={styles.headerTitle}>{titleText}</span>
       </div>
 
       <div className={styles.tabBar}>

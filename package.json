@@ -34,6 +34,7 @@
     "@libp2p/ping": "^3.1.0",
     "@libp2p/tcp": "^11.0.15",
     "@multiformats/multiaddr": "^13.0.1",
+    "animejs": "4",
     "libp2p": "^3.2.0",
     "multiformats": "^13.4.2",
     "react": "^19.2.5",

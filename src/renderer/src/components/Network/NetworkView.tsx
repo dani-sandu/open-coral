@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import TabShell from '../shared/TabShell'
 import BlockRangeTag from '../Block/BlockRangeTag'
 import StatusDot from '../shared/StatusDot'
 import cmp from '../shared/components.module.css'
 import styles from './NetworkView.module.css'
+import { animate } from 'animejs'
+import { usePeerEntrance, ANIMATION_ENABLED, DURATION_PEER } from '../../lib/anime'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
 
@@ -110,45 +112,32 @@ function layoutPeers(peers: NetworkPeer[]): { peer: NetworkPeer; x: number; y: n
 // ── SVG sub-components ────────────────────────────────────────────────────────
 
 function PeerNode({
-  x, y, peer, color, isHovered, onHover,
+  x, y, peer, color, isHovered, onHover, isNew = false,
 }: {
-  x: number; y: number; peer: NetworkPeer; color: string; isHovered: boolean; onHover: (id: string | null) => void
+  x: number; y: number; peer: NetworkPeer; color: string
+  isHovered: boolean; onHover: (id: string | null) => void; isNew?: boolean
 }): React.JSX.Element {
+  const groupRef = usePeerEntrance(isNew)
   const r = peer.isLocal ? 28 : 22
   return (
     <g
+      ref={groupRef}
       onMouseEnter={() => onHover(peer.peerId)}
       onMouseLeave={() => onHover(null)}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', opacity: isNew && ANIMATION_ENABLED ? 0 : undefined }}
     >
-      {/* glow */}
       {isHovered && (
         <circle cx={x} cy={y} r={r + 8} fill={color} opacity={0.12} />
       )}
-      {/* ring */}
       <circle cx={x} cy={y} r={r} fill={SVG_COLORS.surface} stroke={color} strokeWidth={peer.isLocal ? 3 : 2} />
-      {/* inner dot */}
       <circle cx={x} cy={y} r={5} fill={color} opacity={0.8} />
-      {/* label */}
-      <text
-        x={x} y={y + r + 16}
-        textAnchor="middle"
-        fontSize={11}
-        fontFamily="monospace"
-        fill={isHovered ? SVG_COLORS.text : SVG_COLORS.dim}
-      >
+      <text x={x} y={y + r + 16} textAnchor="middle" fontSize={11} fontFamily="monospace"
+        fill={isHovered ? SVG_COLORS.text : SVG_COLORS.dim}>
         {peer.isLocal ? 'LOCAL' : peer.displayName ?? shortPeerId(peer.peerId)}
       </text>
-      {/* block ranges */}
       {peer.blockRanges.length > 0 && (
-        <text
-          x={x} y={y + r + 30}
-          textAnchor="middle"
-          fontSize={9}
-          fontFamily="monospace"
-          fill={color}
-          opacity={0.8}
-        >
+        <text x={x} y={y + r + 30} textAnchor="middle" fontSize={9} fontFamily="monospace"
+          fill={color} opacity={0.8}>
           {peer.blockRanges.map(br => `[${br.start}–${br.end}]`).join(' ')}
         </text>
       )}
@@ -157,17 +146,32 @@ function PeerNode({
 }
 
 function ConnectionLine({
-  x1, y1, x2, y2, highlighted,
+  x1, y1, x2, y2, highlighted, isNew = false,
 }: {
-  x1: number; y1: number; x2: number; y2: number; highlighted: boolean
+  x1: number; y1: number; x2: number; y2: number
+  highlighted: boolean; isNew?: boolean
 }): React.JSX.Element {
+  const lineRef = useRef<SVGLineElement>(null)
+
+  useEffect(() => {
+    if (!isNew || !lineRef.current || !ANIMATION_ENABLED) return
+    const targetOpacity = highlighted ? 0.8 : 0.4
+    const anim = animate(lineRef.current, {
+      opacity: [0, targetOpacity],
+      duration: DURATION_PEER,
+      ease: 'outCubic',
+    })
+    return () => { anim.cancel() }
+  }, [])
+
   return (
     <line
+      ref={lineRef}
       x1={x1} y1={y1} x2={x2} y2={y2}
       stroke={highlighted ? SVG_COLORS.accent : SVG_COLORS.connection}
       strokeWidth={highlighted ? 2 : 1}
       strokeDasharray={highlighted ? 'none' : '4 4'}
-      opacity={highlighted ? 0.8 : 0.4}
+      style={{ opacity: isNew && ANIMATION_ENABLED ? 0 : (highlighted ? 0.8 : 0.4) }}
     />
   )
 }
@@ -238,6 +242,8 @@ export default function NetworkView(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [hoveredPeer, setHoveredPeer] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const seenPeerIds = useRef(new Set<string>())
+  const seenConnKeys = useRef(new Set<string>())
 
   const refresh = useCallback(async () => {
     try {
@@ -258,6 +264,18 @@ export default function NetworkView(): React.JSX.Element {
 
   const laidOut = state ? layoutPeers(state.peers) : []
   const peerMap = new Map(laidOut.map(l => [l.peer.peerId, l]))
+  const connKey = (c: { from: string; to: string }) => `${c.from}__${c.to}`
+  const newPeerIds = new Set(
+    laidOut.map(l => l.peer.peerId).filter(id => !seenPeerIds.current.has(id))
+  )
+  const newConnKeys = new Set(
+    (state?.connections ?? []).map(connKey).filter(k => !seenConnKeys.current.has(k))
+  )
+  useEffect(() => {
+    laidOut.forEach(l => seenPeerIds.current.add(l.peer.peerId))
+    state?.connections.forEach(c => seenConnKeys.current.add(connKey(c)))
+  })
+
   const hoveredPeerData = hoveredPeer ? laidOut.find(l => l.peer.peerId === hoveredPeer) : null
 
   // ── TabShell status strip ──────────────────────────────────────────────────
@@ -334,6 +352,7 @@ export default function NetworkView(): React.JSX.Element {
                 x1={from.x} y1={from.y}
                 x2={to.x} y2={to.y}
                 highlighted={highlighted}
+                isNew={newConnKeys.has(connKey(conn))}
               />
             )
           })}
@@ -345,6 +364,7 @@ export default function NetworkView(): React.JSX.Element {
               x={x} y={y}
               peer={peer}
               color={color}
+              isNew={newPeerIds.has(peer.peerId)}
               isHovered={hoveredPeer === peer.peerId}
               onHover={setHoveredPeer}
             />
