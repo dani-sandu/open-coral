@@ -34,3 +34,31 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a full overview of the system structu
 ## Status
 
 Early development — this is an experimental rebuild, not a production system.
+
+## Roadmap
+
+### Phase 1 
+- [ ] **P1-1** `sampleTopK` typed-array partial sort — eliminate 65M heap allocs/response (`sampler.ts`)
+- [ ] **P1-2** Batch `decodeToken` IPC — collapse 512 worker round-trips to batches of 4–8 (`inference-orchestrator.ts`)
+- [ ] **P1-3** `Promise.all` peer queries — 300ms serial peer latency → ~30ms parallel (`sequence-manager.ts`)
+- [ ] **P1-4** Remove spread copy in ngram lookup — O(n) → O(1) per token (`speculative-session.ts`)
+- [ ] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`)
+
+### Phase 2
+- [ ] **P2-1** Float16 hidden-state wire format — 2× wire-size reduction per hop (`inference-protocol.ts`)
+- [ ] **P2-2** Pre-dial next peer during compute — remove 1 handshake RTT per hop (`sequence-manager.ts`)
+- [ ] **P2-3** Zero-copy input tensor transfer — remove memcpy on every forward call (`native-worker.ts`)
+- [ ] **P2-4** FlashAttention compile flag — ~2× prefill speedup on long contexts (build config)
+- [ ] **P2-5** Background routing table refresh — fully eliminate DHT from inference hot path (`sequence-manager.ts`)
+- [ ] **P2-6** StreamingLLM KV eviction policy — constant KV memory regardless of conversation length (`kv-session-registry.ts`)
+- [ ] **P2-7** NgramCache cleanup on session end — reduce GC pressure on long sessions (`speculative-session.ts`)
+- [ ] **P2-8** DDTree-style tree verification — +20–40% speculative acceptance length, no native changes (`speculative-session.ts`)
+- [ ] **P2-9** Per-phase latency profiler — IPC / network / sig-verify / forward breakdown per hop
+
+### Phase 3
+- [ ] **P3-1** Prefill/decode role separation + chunked prefill — disaggregated pipeline, pull-based KV transfer
+- [ ] **P3-2** Two-level scheduler (DynaServe pattern) — global split-point assignment + local peer batching
+- [ ] **P3-3** FourierCompress / SLICER activation compression — 7.6–10× wire-size reduction *(if network-bound)*
+- [ ] **P3-4** DFlash + `sessionDecodeHiddenLayers` native API — 7–8× speculative speedup *(if compute-bound)*
+- [ ] **P3-5** Continuous batching + PagedAttention — 2–4× multi-user throughput (native addon)
+- [ ] **P3-6** SpeCache distributed KV prefetch — hide remote KV transfer latency behind compute
