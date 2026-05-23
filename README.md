@@ -38,11 +38,11 @@ Early development — this is an experimental rebuild, not a production system.
 ## Roadmap
 
 ### Phase 1 
-- [ ] **P1-1** `sampleTopK` typed-array partial sort — eliminate 65M heap allocs/response (`sampler.ts`)
-- [ ] **P1-2** Batch `decodeToken` IPC — collapse 512 worker round-trips to batches of 4–8 (`inference-orchestrator.ts`)
-- [ ] **P1-3** `Promise.all` peer queries — 300ms serial peer latency → ~30ms parallel (`sequence-manager.ts`)
-- [ ] **P1-4** Remove spread copy in ngram lookup — O(n) → O(1) per token (`speculative-session.ts`)
-- [ ] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`)
+- [x] **P1-1** `sampleTopK` typed-array partial sort — eliminate 65M heap allocs/response (`sampler.ts`)
+- [x] **P1-2** Batch `decodeToken` IPC — collapse 512 worker round-trips to batches of 4–8 (`inference-orchestrator.ts`)
+- [x] **P1-3** `Promise.all` peer queries — 300ms serial peer latency → ~30ms parallel (`sequence-manager.ts`)
+- [x] **P1-4** Remove spread copy in ngram lookup — O(n) → O(1) per token (`speculative-session.ts`)
+- [x] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`, `chain-plan-cache.ts`)
 
 ### Phase 2
 - [ ] **P2-1** Float16 hidden-state wire format — 2× wire-size reduction per hop (`inference-protocol.ts`)

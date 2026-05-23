@@ -39,6 +39,7 @@ function makeDeps(eosId = 3, modelLoaded = true): ApiServerDeps {
     eosTokenId: eosId,
     endOfTurnTokenId: undefined,
     decodeToken: async (id: number) => `T${id}`,
+    decode: async (ids: number[]) => ids.map(id => `T${id}`).join(''),
     encodeChatMulti: async () => new Int32Array([0]),
   } as unknown as NativeTokenizer
 

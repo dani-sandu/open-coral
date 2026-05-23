@@ -31,6 +31,7 @@ function makeMockTokenizer(eosTokenId: number): NativeTokenizer {
     eosTokenId,
     endOfTurnTokenId: undefined,
     decodeToken: async (id: number) => `[${id}]`,
+    decode: async (ids: number[]) => ids.map(id => `[${id}]`).join(''),
   } as unknown as NativeTokenizer
 }
 
@@ -84,5 +85,103 @@ describe('runInferenceStream', () => {
     await gen.return(undefined) // early exit
 
     expect(calls.closeSession).toBe(1)
+  })
+})
+
+describe('runInferenceStream — IPC batching', () => {
+  it('coalesces decodeToken calls into batches via tokenizer.decode', async () => {
+    const vocabSize = 4
+    const eosId = 3
+    // Always-sharp-on-token-1 logits; we cap via maxTokens so the exact emission
+    // count is deterministic regardless of how speculative decoding batches.
+    // Logits are padded to 16 positions so spec batch reads of >1 position
+    // still hit a sharp peak rather than the zero-padded tail.
+    const queue: Float32Array[] = []
+    for (let i = 0; i < 30; i++) {
+      queue.push(sharpLogits(vocabSize, 16, 1))
+    }
+    const { runner } = makeMockRunner(vocabSize, queue)
+
+    let decodeTokenCalls = 0
+    let decodeBatchCalls = 0
+    const tokenizer = {
+      eosTokenId: eosId,
+      endOfTurnTokenId: undefined,
+      decodeToken: async (id: number) => { decodeTokenCalls++; return `[${id}]` },
+      decode: async (ids: number[]) => {
+        decodeBatchCalls++
+        return ids.map(id => `[${id}]`).join('')
+      },
+    } as unknown as import('../../src/inference/native-tokenizer').NativeTokenizer
+
+    const pieces: string[] = []
+    for await (const p of runInferenceStream({
+      runner, tokenizer, promptIds: new Int32Array([0]), maxTokens: 8, requestId: 'r1',
+    })) {
+      pieces.push(p)
+    }
+
+    // With batching, we expect decode() to be used (not decodeToken per token).
+    expect(decodeBatchCalls).toBeGreaterThan(0)
+    expect(decodeTokenCalls).toBe(0)
+
+    // The concatenated output must still equal one piece per generated token.
+    expect(pieces.join('')).toBe('[1][1][1][1][1][1][1][1]')
+    // And we should see fewer yields than tokens (batching reduces yield count).
+    expect(pieces.length).toBeLessThan(8)
+  })
+
+  it('flushes the trailing partial batch on stream end', async () => {
+    const vocabSize = 4
+    const eosId = 3
+    // 3 tokens — does not hit batch size of 4, so a tail flush is needed.
+    // Logits padded to 16 positions so spec batch reads stay deterministic;
+    // maxTokens caps the total emission so the count is independent of spec batching.
+    const queue = Array.from({ length: 10 }, () => sharpLogits(vocabSize, 16, 1))
+    const { runner } = makeMockRunner(vocabSize, queue)
+
+    const tokenizer = {
+      eosTokenId: eosId,
+      endOfTurnTokenId: undefined,
+      decodeToken: async (id: number) => `[${id}]`,
+      decode: async (ids: number[]) => ids.map(id => `[${id}]`).join(''),
+    } as unknown as import('../../src/inference/native-tokenizer').NativeTokenizer
+
+    const pieces: string[] = []
+    for await (const p of runInferenceStream({
+      runner, tokenizer, promptIds: new Int32Array([0]), maxTokens: 3, requestId: 'r1',
+    })) {
+      pieces.push(p)
+    }
+
+    expect(pieces.join('')).toBe('[1][1][1]')
+    expect(pieces.length).toBe(1)  // single tail-flush yield, not 3 per-token yields
+  })
+
+  it('emits nothing and calls neither decode nor decodeToken when first token is EOS', async () => {
+    const vocabSize = 4
+    const eosId = 3
+    // Prefill samples the EOS token immediately — no tokens are ever generated.
+    const { runner } = makeMockRunner(vocabSize, [sharpLogits(vocabSize, 1, eosId)])
+
+    let decodeCalls = 0
+    let decodeTokenCalls = 0
+    const tokenizer = {
+      eosTokenId: eosId,
+      endOfTurnTokenId: undefined,
+      decodeToken: async () => { decodeTokenCalls++; return '' },
+      decode: async () => { decodeCalls++; return '' },
+    } as unknown as import('../../src/inference/native-tokenizer').NativeTokenizer
+
+    const pieces: string[] = []
+    for await (const p of runInferenceStream({
+      runner, tokenizer, promptIds: new Int32Array([0]), maxTokens: 10, requestId: 'r1',
+    })) {
+      pieces.push(p)
+    }
+
+    expect(pieces).toEqual([])
+    expect(decodeCalls).toBe(0)
+    expect(decodeTokenCalls).toBe(0)
   })
 })

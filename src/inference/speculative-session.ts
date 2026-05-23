@@ -1,5 +1,6 @@
 import { NgramCache } from './ngram-cache'
 import { sampleTopK, softmaxProb } from './sampler'
+import { ThinkingBudget, THINKING_TOKEN_BUDGET, hasOpenThinkBlock, type ThinkTokens } from './thinking-budget'
 import type { AsyncBlockRunner } from './native-worker'
 
 export interface VerificationBackend {
@@ -69,20 +70,37 @@ export class SpeculativeSession {
   private readonly eosTokenId: number
   private readonly eotTokenId: number | undefined
   private readonly config: SpecConfig
+  private readonly thinkTokens: ThinkTokens | undefined
+  private readonly thinkingBudget: number
 
   constructor(
     backend: VerificationBackend,
     eosTokenId: number,
     eotTokenId: number | undefined,
     config: SpecConfig = DEFAULT_SPEC_CONFIG,
+    thinkTokens: ThinkTokens | undefined = undefined,
+    thinkingBudget: number = THINKING_TOKEN_BUDGET,
   ) {
     this.backend = backend
     this.eosTokenId = eosTokenId
     this.eotTokenId = eotTokenId
     this.config = config
+    this.thinkTokens = thinkTokens
+    this.thinkingBudget = thinkingBudget
   }
 
-  async generate(promptIds: Int32Array, maxTokens: number): Promise<GenerateResult> {
+  /**
+   * @param contextTokens Tokens already present in the backend's KV cache before
+   *   this call (e.g. conversation history pre-filled by ChatSessionManager).
+   *   `allTokens` must mirror the full KV — the hybrid-model rollback fallback
+   *   re-prefills from it — so callers that pre-fill MUST pass what they fed.
+   *   Defaults to empty for callers that own the session from KV position 0.
+   */
+  async generate(
+    promptIds: Int32Array,
+    maxTokens: number,
+    contextTokens: Int32Array = new Int32Array(0),
+  ): Promise<GenerateResult> {
     const { backend, config } = this
     const { vocabSize } = backend
     const { temperature, topK, enabled, ngramSize, draftMax } = config
@@ -95,7 +113,7 @@ export class SpeculativeSession {
     const prefillLogits = await backend.forwardAll(promptIds)
     let nextToken = sampleTopK(prefillLogits, vocabSize, (promptIds.length - 1) * vocabSize, temperature, topK)
 
-    const allTokens: number[] = Array.from(promptIds)
+    const allTokens: number[] = [...contextTokens, ...promptIds]
     const ngramCache = new NgramCache(ngramSize, draftMax)
     if (enabled) ngramCache.buildFromTokens(allTokens)
 
@@ -104,21 +122,46 @@ export class SpeculativeSession {
     let speculationEnabled = enabled
     const SPEC_PREFILL_CHUNK = 256
 
-    let totalGenerated = 0
+    // Two-phase token budget: thinking tokens are capped separately from the
+    // answer, so a reasoning model can never spend the answer cap on <think>.
+    const budget = new ThinkingBudget(
+      this.thinkTokens, this.thinkingBudget, maxTokens,
+      hasOpenThinkBlock(allTokens, this.thinkTokens),
+    )
 
-    while (totalGenerated < maxTokens) {
+    while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
       if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
 
-      const draftTokens = speculationEnabled ? ngramCache.lookup([...allTokens, nextToken]) : []
-      const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
+      // Thinking budget spent without a </think> — inject one to force the
+      // model into the answer phase. The </think> is fed through the backend so
+      // the KV cache reflects the phase change (reasoning models are trained to
+      // switch to answering after </think>); it is emitted in the output but
+      // not counted against either budget. The token sampled before this point
+      // was a thinking continuation and is discarded.
+      if (budget.needsForceClose() && this.thinkTokens !== undefined) {
+        const closeId = this.thinkTokens.close
+        generatedIds.push(closeId)
+        allTokens.push(closeId)
+        if (enabled) ngramCache.addToken(closeId, allTokens)
+        const logits = await backend.forwardOne(closeId)
+        budget.forceClose()
+        nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
+        continue
+      }
+
+      // Push nextToken into the context FIRST so the lookup avoids a spread copy.
+      // Invariants downstream (rollback math, ngramCache.addToken) line up because
+      // nextToken was always destined to be pushed before any addToken call.
+      allTokens.push(nextToken)
+      const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
+      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
         // Single-token path
         generatedIds.push(nextToken)
-        allTokens.push(nextToken)
+        budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
-        totalGenerated++
 
         const logits = await backend.forwardOne(nextToken)
         nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
@@ -134,15 +177,14 @@ export class SpeculativeSession {
 
         // nextToken is always accepted (was already sampled from target distribution)
         generatedIds.push(nextToken)
-        allTokens.push(nextToken)
+        budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
-        totalGenerated++
 
         let accepted = 0
         let rejected = false
         let terminated = false  // EOS/EOT accepted as draft — stop outer loop without sampling bonus
 
-        for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
+        for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
           // Speculative sampling (Leviathan et al. 2023):
           // n-gram draft is a point mass on draftTokens[i], so accept with p_target[draftTokens[i]]
           const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
@@ -156,9 +198,9 @@ export class SpeculativeSession {
             if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
 
             generatedIds.push(draftTokens[i])
+            budget.count(draftTokens[i])
             allTokens.push(draftTokens[i])
             if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
-            totalGenerated++
           } else {
             // Draft rejected: sample corrected token from position i (the rejected slot's logits),
             // then rollback KV cache to discard the unaccepted draft slots.
@@ -177,6 +219,8 @@ export class SpeculativeSession {
               }
               speculationEnabled = false
             }
+            // KV is now in sync with the accepted prefix; trim allTokens to match.
+            allTokens.length = rollbackTo
             rejected = true
             break
           }
@@ -193,34 +237,58 @@ export class SpeculativeSession {
     return { tokenIds: generatedIds, specDraftTokens, specAcceptedTokens }
   }
 
-  async *generateTokens(promptIds: Int32Array, maxTokens: number): AsyncGenerator<number> {
+  /** Streaming counterpart of `generate`. See `generate` for `contextTokens`. */
+  async *generateTokens(
+    promptIds: Int32Array,
+    maxTokens: number,
+    contextTokens: Int32Array = new Int32Array(0),
+  ): AsyncGenerator<number> {
     const { backend, config } = this
     const { vocabSize } = backend
     const { temperature, topK, enabled, ngramSize, draftMax } = config
 
-    const allTokens: number[] = Array.from(promptIds)
+    const allTokens: number[] = [...contextTokens, ...promptIds]
     const ngramCache = new NgramCache(ngramSize, draftMax)
     if (enabled) ngramCache.buildFromTokens(allTokens)
 
     let speculationEnabled = enabled
     const SPEC_PREFILL_CHUNK = 256
-    let totalGenerated = 0
 
     const prefillLogits = await backend.forwardAll(promptIds)
     let nextToken = sampleTopK(prefillLogits, vocabSize, (promptIds.length - 1) * vocabSize, temperature, topK)
 
-    while (totalGenerated < maxTokens) {
+    // Two-phase token budget — see `generate` for the rationale.
+    const budget = new ThinkingBudget(
+      this.thinkTokens, this.thinkingBudget, maxTokens,
+      hasOpenThinkBlock(allTokens, this.thinkTokens),
+    )
+
+    while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
       if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
 
-      const draftTokens = speculationEnabled ? ngramCache.lookup([...allTokens, nextToken]) : []
-      const maxDrafts = Math.min(draftTokens.length, maxTokens - totalGenerated - 1)
+      // Thinking budget spent without a </think> — feed one through the backend
+      // so the KV reflects the phase change, emit it, and switch to the answer
+      // phase. The in-flight thinking token sampled before this is discarded.
+      if (budget.needsForceClose() && this.thinkTokens !== undefined) {
+        const closeId = this.thinkTokens.close
+        yield closeId
+        allTokens.push(closeId)
+        if (enabled) ngramCache.addToken(closeId, allTokens)
+        const logits = await backend.forwardOne(closeId)
+        budget.forceClose()
+        nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
+        continue
+      }
+
+      allTokens.push(nextToken)
+      const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
+      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
         yield nextToken
-        allTokens.push(nextToken)
+        budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
-        totalGenerated++
         const logits = await backend.forwardOne(nextToken)
         nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
       } else {
@@ -232,24 +300,23 @@ export class SpeculativeSession {
         const kvPositionAfterBatch = backend.nPast
 
         yield nextToken
-        allTokens.push(nextToken)
+        budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
-        totalGenerated++
 
         let accepted = 0
         let rejected = false
         let terminated = false
 
-        for (let i = 0; i < maxDrafts && totalGenerated < maxTokens; i++) {
+        for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
           const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
           if (Math.random() < pAccept) {
             accepted++
             if (draftTokens[i] === this.eosTokenId) { terminated = true; break }
             if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
             yield draftTokens[i]
+            budget.count(draftTokens[i])
             allTokens.push(draftTokens[i])
             if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
-            totalGenerated++
           } else {
             nextToken = sampleTopK(allLogits, vocabSize, i * vocabSize, temperature, topK)
             const rollbackTo = kvPositionAfterBatch - (maxDrafts - accepted)
@@ -263,6 +330,7 @@ export class SpeculativeSession {
               }
               speculationEnabled = false
             }
+            allTokens.length = rollbackTo
             rejected = true
             break
           }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { SpeculativeSession, DEFAULT_SPEC_CONFIG, type VerificationBackend } from '../../src/inference/speculative-session'
+import { THINKING_TOKEN_BUDGET } from '../../src/inference/thinking-budget'
 
 class MockBackend implements VerificationBackend {
   readonly vocabSize: number
@@ -83,5 +84,55 @@ describe('SpeculativeSession.generateTokens', () => {
       tokens.push(id)
     }
     expect(tokens.length).toBeLessThanOrEqual(3)
+  })
+
+  it('streaming: thinking tokens do not count against the answer cap', async () => {
+    const vocabSize = 10
+    const eosId = 9
+    const backend = new MockBackend(vocabSize, [
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 2), // model generates </think>
+      sharpLogits(vocabSize, 1, 6),
+      sharpLogits(vocabSize, 1, 7),
+      sharpLogits(vocabSize, 1, 8),
+      sharpLogits(vocabSize, 1, eosId),
+    ])
+    const session = new SpeculativeSession(
+      backend, eosId, undefined,
+      { ...DEFAULT_SPEC_CONFIG, enabled: false },
+      { open: 1, close: 2 },
+    )
+    const out: number[] = []
+    for await (const t of session.generateTokens(new Int32Array([1]), 3)) out.push(t)
+    // 3 thinking + </think> + exactly maxTokens (3) answer tokens.
+    expect(out).toEqual([5, 5, 5, 2, 6, 7, 8])
+  })
+
+  it('streaming: force-closes when the thinking budget is exhausted', async () => {
+    const vocabSize = 10
+    const eosId = 9
+    const backend = new MockBackend(vocabSize, [
+      sharpLogits(vocabSize, 1, 5),     // prefill → thinking token 5
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 6),     // in-flight thinking token — discarded by force-close
+      sharpLogits(vocabSize, 1, 7),     // first answer token, sampled after </think> is fed
+      sharpLogits(vocabSize, 1, 8),
+      sharpLogits(vocabSize, 1, eosId),
+    ])
+    const session = new SpeculativeSession(
+      backend, eosId, undefined,
+      { ...DEFAULT_SPEC_CONFIG, enabled: false },
+      { open: 1, close: 2 },
+      3, // thinkingBudget override
+    )
+    const out: number[] = []
+    for await (const t of session.generateTokens(new Int32Array([1]), 2)) out.push(t)
+    // 3 thinking tokens, injected </think> (token 2), then 2 answer tokens. Token 6
+    // (the in-flight thinking continuation) is discarded — </think> is fed to the
+    // backend and the answer is sampled from post-</think> context.
+    expect(out).toEqual([5, 5, 5, 2, 7, 8])
   })
 })

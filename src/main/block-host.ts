@@ -12,6 +12,7 @@ import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
 import { KVSessionRegistry } from './kv-session-registry'
 import { runInference } from './inference-orchestrator'
+import { getChainPlanCached } from './chain-plan-cache'
 
 export interface HostingState {
   modelPath: string
@@ -209,7 +210,8 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
       repoId: model.repoId,
     })
 
-    const chain = await mgr.planChainWithCandidates()
+    const cacheKey = model.repoId ?? '__no_repo__'
+    const chain = await getChainPlanCached(cacheKey, () => mgr.planChainWithCandidates())
     const nEmbd = model.hiddenSize
 
     const t0 = Date.now()

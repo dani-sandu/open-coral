@@ -190,6 +190,35 @@ describe('SequenceManager', () => {
     expect(report.complete).toBe(false)
     expect(report.missing).toContain(TINY_CONFIG.n_blocks)
   }, 15000)
+
+  it('planChainWithCandidates() assembles a multi-step chain from explicit candidates', async () => {
+    // Explicit candidates take the fully-deterministic path (no DHT) and pin the
+    // chain-assembly logic that both code paths feed into. The P1-3 parallelisation
+    // (repoId discovery → Promise.all(queryPeer) → sequential merge) is a
+    // behaviour-transparent refactor — identical results, only timing changed — and
+    // the merge race is closed structurally by the synchronous merge. It is not
+    // unit-tested here because the 2-node in-process fixture cannot reach DHT
+    // content-routing deterministically; the existing planChain()/checkCoverage()
+    // tests above cover SequenceManager discovery end-to-end.
+    const candidates: ChainStepCandidate[] = [
+      { peerId: 'peer-1', blockStart: 0, blockEnd: 0, multiaddr: '/ip4/127.0.0.1/tcp/1/p2p/peer-1' },
+      { peerId: 'peer-2', blockStart: 1, blockEnd: 1, multiaddr: '/ip4/127.0.0.1/tcp/2/p2p/peer-2' },
+    ]
+    const mgr = new SequenceManager({
+      node: nodeA,
+      localRunner: null,
+      totalBlocks: TINY_CONFIG.n_blocks,
+      hiddenSize: TINY_CONFIG.n_embd,
+      identity,
+    })
+
+    const chain = await mgr.planChainWithCandidates(candidates)
+    expect(chain.length).toBe(2)
+    expect(chain[0].blockStart).toBe(0)
+    expect(chain[1].blockStart).toBe(1)
+    expect(chain[0].candidates[0].peerId).toBe('peer-1')
+    expect(chain[1].candidates[0].peerId).toBe('peer-2')
+  })
 })
 
 describe('SequenceManager — fault tolerance', () => {

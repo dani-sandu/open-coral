@@ -1,4 +1,10 @@
 import { AsyncVocabRunner } from './native-worker'
+import type { ThinkTokens } from './thinking-budget'
+
+/** Returns the single token id if `ids` has exactly one element, else undefined. */
+export function pickSingleToken(ids: Int32Array): number | undefined {
+  return ids.length === 1 ? ids[0] : undefined
+}
 
 export interface ChatTurn {
   role: 'user' | 'assistant' | 'system'
@@ -18,6 +24,8 @@ export interface Tokenizer {
   readonly bosTokenId: number
   readonly eosTokenId: number
   readonly endOfTurnTokenId: number | undefined
+  readonly thinkOpenTokenId: number | undefined
+  readonly thinkCloseTokenId: number | undefined
   /** Encode text to token IDs using byte-level fallback */
   encode(text: string): Promise<Int32Array>
   /** Encode a user chat message with model-specific chat template */
@@ -34,15 +42,27 @@ export class NativeTokenizer implements Tokenizer {
   readonly bosTokenId: number
   readonly eosTokenId: number
   readonly endOfTurnTokenId: number | undefined
+  readonly thinkOpenTokenId: number | undefined
+  readonly thinkCloseTokenId: number | undefined
 
   constructor(
     private readonly runner: AsyncVocabRunner,
     specialTokens: { bosId: number; eosId: number; eotId: number; vocabSize: number },
+    thinkOpenTokenId: number | undefined,
+    thinkCloseTokenId: number | undefined,
   ) {
     this.vocabSize        = specialTokens.vocabSize
     this.bosTokenId       = specialTokens.bosId
     this.eosTokenId       = specialTokens.eosId
     this.endOfTurnTokenId = specialTokens.eotId >= 0 ? specialTokens.eotId : undefined
+    this.thinkOpenTokenId = thinkOpenTokenId
+    this.thinkCloseTokenId = thinkCloseTokenId
+  }
+
+  /** Resolved <think>/</think> token pair, or undefined if the model lacks single-token markers. */
+  get thinkTokens(): ThinkTokens | undefined {
+    if (this.thinkOpenTokenId === undefined || this.thinkCloseTokenId === undefined) return undefined
+    return { open: this.thinkOpenTokenId, close: this.thinkCloseTokenId }
   }
 
   encode(text: string): Promise<Int32Array> {
@@ -84,7 +104,10 @@ export class NativeTokenizer implements Tokenizer {
 export async function loadNativeTokenizer(filePath: string): Promise<NativeTokenizer> {
   const runner = await AsyncVocabRunner.create(filePath)
   const specialTokens = await runner.getSpecialTokens()
-  return new NativeTokenizer(runner, specialTokens)
+  // parseSpecial=true so a registered <think>/</think> special token resolves to one id.
+  const thinkOpen = pickSingleToken(await runner.tokenize('<think>', false, true))
+  const thinkClose = pickSingleToken(await runner.tokenize('</think>', false, true))
+  return new NativeTokenizer(runner, specialTokens, thinkOpen, thinkClose)
 }
 
 export async function freeNativeTokenizer(t: NativeTokenizer): Promise<void> {

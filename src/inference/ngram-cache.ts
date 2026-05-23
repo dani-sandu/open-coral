@@ -40,6 +40,9 @@ export class NgramCache {
     }
   }
 
+  // Hashes only the trailing `ngramSize` tokens of `context` — no copy of the
+  // full array. Callers append the speculative next token to their own context
+  // array before calling, rather than building a fresh `[...context, next]`.
   lookup(context: number[]): number[] {
     if (context.length < this.ngramSize) return []
     const key = this.hashKey(context, context.length - this.ngramSize, this.ngramSize)
