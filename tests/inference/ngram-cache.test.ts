@@ -69,4 +69,17 @@ describe('NgramCache', () => {
     expect(drafts1).toEqual([100, 101, 102])
     expect(drafts2).toEqual([200, 201, 202])
   })
+
+  // Pins the SpeculativeSession refactor: pushing nextToken into the context
+  // array and calling lookup must equal the old lookup([...context, nextToken]).
+  it('lookup on a pre-pushed array equals lookup with an appended token', () => {
+    const cache = new NgramCache(3, 5)
+    cache.buildFromTokens([7, 8, 9, 100, 101, 102])
+    const allTokens = [7, 8]
+    const nextToken = 9
+    const oldResult = cache.lookup([...allTokens, nextToken])
+    allTokens.push(nextToken)
+    const newResult = cache.lookup(allTokens)
+    expect(newResult).toEqual(oldResult)
+  })
 })

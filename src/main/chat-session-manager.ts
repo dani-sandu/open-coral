@@ -8,6 +8,7 @@ import type { SessionSummary } from './session-store'
 import type { KVSessionClient } from '../p2p/kv-protocol'
 import { LocalVerificationBackend, SpeculativeSession, DEFAULT_SPEC_CONFIG } from '../inference/speculative-session'
 import type { VerificationBackend } from '../inference/speculative-session'
+import { THINKING_TOKEN_BUDGET } from '../inference/thinking-budget'
 
 export type SessionPhase = 'planning' | 'opening-remote-kv' | 'prefilling' | 'ready' | 'error'
 
@@ -65,7 +66,9 @@ interface ActiveTurnContext {
   backend: VerificationBackend
 }
 
-const KV_RESERVE_FOR_GENERATION = 2048
+// Reserve space for both the thinking budget and a full-length answer so a
+// reasoning model never overruns the session's max_length.
+const KV_RESERVE_FOR_GENERATION = THINKING_TOKEN_BUDGET + 2048
 /** Max tokens per prefill batch. Stays under llama.cpp's default n_ubatch (512). */
 const PREFILL_CHUNK_SIZE = 256
 
@@ -202,10 +205,16 @@ export class ChatSessionManager {
       tokenizer.eosTokenId,
       tokenizer.endOfTurnTokenId,
       DEFAULT_SPEC_CONFIG,
+      tokenizer.thinkTokens,
     )
 
+    // SpeculativeSession mirrors the KV cache in its own token array; hand it the
+    // tokens already prefilled into the KV (everything before prefedTokens) so its
+    // hybrid-model rollback fallback can reconstruct the full sequence.
+    const contextTokens = afterTokens.subarray(0, afterTokens.length - prefedTokens.length)
+
     const t0 = Date.now()
-    const gen = await spec.generate(prefedTokens, maxTokens)
+    const gen = await spec.generate(prefedTokens, maxTokens, contextTokens)
     const inferenceMs = Date.now() - t0
 
     active.nPast = backend.nPast

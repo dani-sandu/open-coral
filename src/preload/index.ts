@@ -75,4 +75,21 @@ contextBridge.exposeInMainWorld('opencoral', {
     ipcRenderer.on('opencoral:session-invalidated', wrapped)
     return () => ipcRenderer.removeListener('opencoral:session-invalidated', wrapped)
   },
+
+  // API Server
+  apiServerStatus: () => ipcRenderer.invoke('opencoral:api-server-status'),
+  apiServerToggle: (enable: boolean) => ipcRenderer.invoke('opencoral:api-server-toggle', enable),
+  apiServerSetPort: (port: number) => ipcRenderer.invoke('opencoral:api-server-set-port', port),
+  apiServerRegenKey: () => ipcRenderer.invoke('opencoral:api-server-regen-key'),
+  onApiServerStatusPush: (handler: (status: unknown) => void) => {
+    const wrapped = (_e: unknown, payload: unknown): void => handler(payload)
+    ipcRenderer.on('opencoral:api-server-status-push', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:api-server-status-push', wrapped)
+  },
+  onApiServerLog: (handler: (entry: unknown) => void) => {
+    const wrapped = (_e: unknown, payload: unknown): void => handler(payload)
+    ipcRenderer.on('opencoral:api-server-log', wrapped)
+    return () => ipcRenderer.removeListener('opencoral:api-server-log', wrapped)
+  },
+  apiServerClaudeToggle: () => ipcRenderer.invoke('opencoral:api-server-claude-toggle'),
 })

@@ -1,6 +1,6 @@
 {
   "name": "opencoral",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "description": "Decentralized LLM desktop client",
   "author": {
     "name": "OpenCoral Contributors",
@@ -27,6 +27,7 @@
   "dependencies": {
     "@chainsafe/libp2p-noise": "^17.0.0",
     "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@hono/node-server": "^2.0.2",
     "@libp2p/bootstrap": "^12.0.16",
     "@libp2p/identify": "^4.1.0",
     "@libp2p/kad-dht": "^16.2.0",
@@ -34,6 +35,8 @@
     "@libp2p/ping": "^3.1.0",
     "@libp2p/tcp": "^11.0.15",
     "@multiformats/multiaddr": "^13.0.1",
+    "animejs": "4",
+    "hono": "^4.12.18",
     "libp2p": "^3.2.0",
     "multiformats": "^13.4.2",
     "react": "^19.2.5",

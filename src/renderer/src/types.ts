@@ -225,6 +225,14 @@ declare global {
       onSessionDeleted: (handler: (id: string) => void) => Unsubscribe
       onSessionPhase: (handler: (e: SessionPhaseEvent) => void) => Unsubscribe
       onSessionInvalidated: (handler: (e: SessionInvalidationEvent) => void) => Unsubscribe
+      // API Server
+      apiServerStatus: () => Promise<unknown>
+      apiServerToggle: (enable: boolean) => Promise<void>
+      apiServerSetPort: (port: number) => Promise<void>
+      apiServerRegenKey: () => Promise<void>
+      onApiServerStatusPush: (handler: (s: unknown) => void) => Unsubscribe
+      onApiServerLog: (handler: (entry: unknown) => void) => Unsubscribe
+      apiServerClaudeToggle: () => Promise<void>
     }
   }
 }

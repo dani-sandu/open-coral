@@ -22,6 +22,7 @@ IPC entry point, model loading, chat session lifecycle, and HuggingFace integrat
 |---|---|
 | `index.ts` | IPC entry point and process lifecycle |
 | `block-host.ts` | Loads the local model slice, drives inference |
+| `chain-plan-cache.ts` | Short-TTL cache for the DHT chain plan, keyed by model repo |
 | `inference-orchestrator.ts` | Single-prompt runner: tokenize → speculative generate → result |
 | `chat-session-manager.ts` | Manages active sessions: KV open, prefill, decode loop, resume |
 | `chat-session-ipc.ts` | IPC wiring; keeps Electron imports out of the manager core |

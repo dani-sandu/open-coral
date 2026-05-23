@@ -8,6 +8,8 @@ import styles from './ChatPanel.module.css'
 import cmp from '../shared/components.module.css'
 import { useToast } from '../Toast/ToastProvider'
 import { formatMissingRanges } from '../../utils/format'
+import { animate, type JSAnimation } from 'animejs'
+import { ANIMATION_ENABLED, SPRING_TOKEN, DURATION_TOKEN } from '../../lib/anime'
 
 function shortId(id: string): string {
   if (id === 'local') return 'local'
@@ -150,11 +152,31 @@ function ThinkingBlock({ thinking }: { thinking: string }): React.JSX.Element {
   )
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }): React.JSX.Element {
+function MessageBubble({ msg, isNew = false }: { msg: ChatMessage; isNew?: boolean }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const instanceRef = useRef<JSAnimation | null>(null)
   const isUser = msg.role === 'user'
-  const { thinking, output } = msg.role === 'assistant' ? parseThinking(msg.text) : { thinking: null, output: msg.text }
+  const { thinking, output } = msg.role === 'assistant'
+    ? parseThinking(msg.text)
+    : { thinking: null, output: msg.text }
+
+  useEffect(() => {
+    if (!isNew || !ref.current || !ANIMATION_ENABLED) return
+    instanceRef.current = animate(ref.current, {
+      opacity: [0, 1],
+      translateY: [4, 0],
+      ease: SPRING_TOKEN,
+      duration: DURATION_TOKEN,
+    })
+    return () => { instanceRef.current?.cancel() }
+  }, [])
+
   return (
-    <div className={isUser ? styles.bubbleUser : styles.bubbleAssistant}>
+    <div
+      ref={ref}
+      className={isUser ? styles.bubbleUser : styles.bubbleAssistant}
+      style={isNew && ANIMATION_ENABLED ? { opacity: 0 } : undefined}
+    >
       <div className={isUser ? styles.bubbleInnerUser : styles.bubbleInnerAssistant}>
         {thinking !== null && thinking !== '' && <ThinkingBlock thinking={thinking} />}
         {output && (
@@ -193,6 +215,7 @@ export default function ChatPanel({
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
   const [phase, setPhase] = useState<SessionPhaseEvent | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const prevMessageCountRef = useRef<Record<string, number>>({})
   const { addToast } = useToast()
 
   // Fetch active session content from main when selection changes.
@@ -251,6 +274,12 @@ export default function ChatPanel({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [activeSession?.messages])
+
+  useEffect(() => {
+    if (activeSession?.id) {
+      prevMessageCountRef.current[activeSession.id] = activeSession.messages.length
+    }
+  })
 
   const send = useCallback(async () => {
     const text = draft.trim()
@@ -407,9 +436,12 @@ export default function ChatPanel({
                 blocks, and the model's response displayed here.
               </div>
             )}
-            {activeSession?.messages.map(msg => (
-              <MessageBubble key={msg.id} msg={msg} />
-            ))}
+            {activeSession?.messages.map((msg, i) => {
+              const sessionId = activeSession.id
+              const prevCount = prevMessageCountRef.current[sessionId] ?? -1
+              const isNew = prevCount !== -1 && i >= prevCount
+              return <MessageBubble key={msg.id} msg={msg} isNew={isNew} />
+            })}
             {sendingHere && <ThinkingIndicator phase={phase} />}
           </div>
 

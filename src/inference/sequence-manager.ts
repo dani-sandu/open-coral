@@ -2,7 +2,7 @@ import { peerIdFromString } from '@libp2p/peer-id'
 import { multiaddr } from '@multiformats/multiaddr'
 import type { OpenCoralNode } from '../p2p/node'
 import { findCoralPeers, findModelPeers, type PeerBlockInfo } from '../p2p/dht'
-import { queryPeerModelInfo } from '../p2p/model-announce'
+import { queryPeerModelInfo, type PeerModelInfoPayload } from '../p2p/model-announce'
 import type { PeerLatencyTracker } from '../p2p/peer-latency'
 import { DEFAULT_LATENCY_MS } from '../p2p/peer-latency'
 import { sendInferenceRequestV3 } from '../p2p/inference-protocol'
@@ -208,66 +208,70 @@ export class SequenceManager {
       blockCandidates = new Map()
       const selfId = this.node.peerId
 
-      // Helper: query a peer for model info and add to candidates
-      const addPeerCandidates = async (peerId: string, multiaddrs: string[]): Promise<void> => {
-        if (peerId === selfId) return
+      // mergeResult must stay sync to close the read-modify-write race on blockCandidates.
+      const queryPeer = async (peerId: string, multiaddrs: string[]): Promise<
+        { peerId: string; multiaddrs: string[]; info: PeerModelInfoPayload } | null
+      > => {
+        if (peerId === selfId) return null
         try {
           const pid = peerIdFromString(peerId)
           const info = await queryPeerModelInfo(this.node.libp2p, pid)
-          if (!info) return
-          for (let i = info.blockStart; i <= info.blockEnd; i++) {
-            if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
-            const list = blockCandidates.get(i) ?? []
-            if (!list.some(c => c.peerId === peerId)) {
-              list.push({
-                peerId,
-                blockStart: info.blockStart,
-                blockEnd: info.blockEnd,
-                multiaddr: multiaddrs[0],
-              })
-            }
-            blockCandidates.set(i, list)
+          if (!info) return null
+          return { peerId, multiaddrs, info }
+        } catch {
+          return null
+        }
+      }
+
+      const mergeResult = (
+        peerId: string,
+        multiaddrs: string[],
+        info: { blockStart: number; blockEnd: number },
+      ): void => {
+        for (let i = info.blockStart; i <= info.blockEnd; i++) {
+          if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
+          const list = blockCandidates.get(i) ?? []
+          if (!list.some(c => c.peerId === peerId)) {
+            list.push({
+              peerId,
+              blockStart: info.blockStart,
+              blockEnd: info.blockEnd,
+              multiaddr: multiaddrs[0],
+            })
           }
-        } catch {}
+          blockCandidates.set(i, list)
+        }
       }
 
       if (this.repoId) {
-        // Model-level discovery: DHT query, then modelinfo per peer
+        // Model-level discovery: DHT query, then modelinfo per peer (in parallel).
         const peers = await findModelPeers(this.node.libp2p, this.repoId)
-        for (const peer of peers) {
-          await addPeerCandidates(peer.peerId, peer.multiaddrs)
+        const results = await Promise.all(peers.map(p => queryPeer(p.peerId, p.multiaddrs)))
+        for (const r of results) {
+          if (r) mergeResult(r.peerId, r.multiaddrs, r.info)
         }
 
         // Fallback: if DHT returned no usable results (e.g. bootstrap disconnected),
         // query all directly connected peers — they're still reachable even without DHT.
         if (blockCandidates.size === 0) {
           const connectedPeers = this.node.libp2p.getPeers()
-          for (const pid of connectedPeers) {
+          const fallbackResults = await Promise.all(connectedPeers.map(pid => {
             const peerIdStr = pid.toString()
             const addrs = this.node.libp2p.getConnections(pid).flatMap(c => [c.remoteAddr.toString()])
-            await addPeerCandidates(peerIdStr, addrs)
+            return queryPeer(peerIdStr, addrs)
+          }))
+          for (const r of fallbackResults) {
+            if (r) mergeResult(r.peerId, r.multiaddrs, r.info)
           }
         }
       } else {
-        // Fallback: coral peer discovery + getPeerBlockRange
+        // Fallback: coral peer discovery + getPeerBlockRange (no async per peer, no parallelism needed)
         const coralPeers = await findCoralPeers(this.node.libp2p)
         for (const peer of coralPeers) {
           if (peer.peerId === selfId) continue
           const range = this.getPeerBlockRange(peer.peerId)
           if (!range) continue
-          for (let i = range.blockStart; i <= range.blockEnd; i++) {
-            if (this.localRunner && i >= this.localRunner.blockStart && i <= this.localRunner.blockEnd) continue
-            const list = blockCandidates.get(i) ?? []
-            if (!list.some(c => c.peerId === peer.peerId)) {
-              list.push({
-                peerId: peer.peerId,
-                blockStart: range.blockStart,
-                blockEnd: range.blockEnd,
-                multiaddr: peer.multiaddrs[0],
-              })
-            }
-            blockCandidates.set(i, list)
-          }
+          mergeResult(peer.peerId, peer.multiaddrs, range)
         }
       }
     }
@@ -488,36 +492,34 @@ export class SequenceManager {
     // discoverRemoteBlocks() uses a stale cache — coverage must use fresh data.
     const selfId = this.node.peerId
 
-    // Helper: query a peer and add to coverage
-    const addPeerCoverage = async (peerId: string, multiaddrs: string[]): Promise<void> => {
-      if (peerId === selfId) return
+    const queryPeer = async (peerId: string, multiaddrs: string[]): Promise<
+      { blockStart: number; blockEnd: number; peerId: string; multiaddrs: string[] } | null
+    > => {
+      if (peerId === selfId) return null
       try {
         const pid = peerIdFromString(peerId)
         const info = await queryPeerModelInfo(this.node.libp2p, pid)
-        if (!info) return
-        available.push({
-          blockStart: info.blockStart,
-          blockEnd: info.blockEnd,
-          peerId,
-          multiaddrs,
-        })
-      } catch {}
+        if (!info) return null
+        return { blockStart: info.blockStart, blockEnd: info.blockEnd, peerId, multiaddrs }
+      } catch {
+        return null
+      }
     }
 
     if (this.repoId) {
       const peers = await findModelPeers(this.node.libp2p, this.repoId)
-      for (const peer of peers) {
-        await addPeerCoverage(peer.peerId, peer.multiaddrs)
-      }
+      const results = await Promise.all(peers.map(p => queryPeer(p.peerId, p.multiaddrs)))
+      for (const r of results) if (r) available.push(r)
 
       // Fallback: if DHT returned no remote peers, query directly connected peers
       const hasRemoteCoverage = available.some(a => a.peerId !== 'local')
       if (!hasRemoteCoverage) {
         const connectedPeers = this.node.libp2p.getPeers()
-        for (const pid of connectedPeers) {
+        const fallbackResults = await Promise.all(connectedPeers.map(pid => {
           const addrs = this.node.libp2p.getConnections(pid).flatMap(c => [c.remoteAddr.toString()])
-          await addPeerCoverage(pid.toString(), addrs)
-        }
+          return queryPeer(pid.toString(), addrs)
+        }))
+        for (const r of fallbackResults) if (r) available.push(r)
       }
     } else {
       // Fallback: use cached discovery (same as before)

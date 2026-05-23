@@ -22,6 +22,9 @@ import {
   broadcastSessionInvalidated,
 } from './chat-session-ipc'
 import { SequenceManager } from '../inference/sequence-manager'
+import { ApiServer } from './api-server'
+import { setupApiServerIPC } from './api-server-ipc'
+import { loadConfig } from './api-config'
 
 let openCoralNode: OpenCoralNode | null = null
 let localBlocks: { start: number; end: number }[] = []
@@ -170,6 +173,18 @@ function setupIPC(): void {
   })
 
   setupChatSessionIPC(chatSessionManager, sessionStore)
+
+  // ── API Server ───────────────────────────────────────────────────────────────
+  const apiCfg = loadConfig(app.getPath('userData'))
+  const apiServer = new ApiServer(apiCfg, {
+    getRunner: () => getShimRunner() ?? getActiveHost()?.runner ?? null,
+    getTokenizer: () => getCachedTokenizer(),
+    getModel: () => getCurrentModel(),
+  })
+  setupApiServerIPC(apiServer)
+  if (apiCfg.enabled) {
+    apiServer.start().catch(err => console.error('[ApiServer] auto-start failed:', err))
+  }
 
   subscribeModelChange(() => {
     chatSessionManager?.invalidateActive('model-change').catch(() => {})

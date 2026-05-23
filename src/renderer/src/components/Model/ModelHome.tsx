@@ -4,7 +4,7 @@ import type {
 } from '../../types'
 import { fmt } from '../shared/format-utils'
 import cmp from '../shared/components.module.css'
-import StatusDot from '../shared/StatusDot'
+import { useStatusRow, usePulsingDot } from '../../lib/anime'
 
 // ── Quantization helpers ─────────────────────────────────────────────────────
 
@@ -92,6 +92,11 @@ export default function ModelHome({
     ? (selectedModel.blockStart ?? 0)
     : 0
 
+  const hostingBannerRef = useStatusRow(hostingState !== null)
+  const hostingDotRef = usePulsingDot(hostingState !== null)
+  const hostingBtnRef = usePulsingDot(hostBusy)
+  const localFileBtnRef = usePulsingDot(loading)
+
   return (
     <>
       {/* ── Search / Add model (always visible at top) ──────────── */}
@@ -118,6 +123,7 @@ export default function ModelHome({
             {searching ? 'Searching...' : 'Search HF'}
           </button>
           <button
+            ref={localFileBtnRef as React.RefObject<HTMLButtonElement>}
             onClick={onPickLocal}
             disabled={loading}
             className={cmp.btnSecondary}
@@ -132,14 +138,21 @@ export default function ModelHome({
       {hostingState && (() => {
         const hostedEntry = localModels.find(e => e.path === hostingState.modelPath)
         return (
-          <div style={{
+          <div ref={hostingBannerRef as React.RefObject<HTMLDivElement>} style={{
             background: 'color-mix(in srgb, var(--green) 5%, transparent)',
             border: '1px solid color-mix(in srgb, var(--green) 20%, transparent)',
             borderRadius: 'var(--radius-xl)', padding: 14, marginBottom: 20,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <StatusDot color="green" />
+                <span
+                  ref={hostingDotRef as React.RefObject<HTMLSpanElement>}
+                  style={{
+                    display: 'inline-block', width: 8, height: 8,
+                    borderRadius: '50%', background: 'var(--green)',
+                    boxShadow: '0 0 6px var(--green)',
+                  }}
+                />
                 <span style={{ color: 'var(--green)', fontSize: 'var(--fs-lg)', fontWeight: 600 }}>Currently Hosting</span>
               </div>
               <button
@@ -385,6 +398,7 @@ export default function ModelHome({
                         </div>
 
                         <button
+                          ref={hostingBtnRef as React.RefObject<HTMLButtonElement>}
                           onClick={onStartHosting}
                           disabled={hostBusy}
                           className={cmp.btnPrimary}

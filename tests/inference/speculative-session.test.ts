@@ -5,6 +5,7 @@ import {
   DEFAULT_SPEC_CONFIG,
   type VerificationBackend,
 } from '../../src/inference/speculative-session'
+import { THINKING_TOKEN_BUDGET } from '../../src/inference/thinking-budget'
 
 // ── Mock backend ─────────────────────────────────────────────────────────────
 
@@ -198,6 +199,59 @@ describe('SpeculativeSession', () => {
     expect(backend.rollbackCalls).toHaveLength(0)
   })
 
+  it('hybrid model with a pre-filled KV context does not decode an empty batch', async () => {
+    // Reproduces the chat bug: ChatSessionManager pre-fills conversation context
+    // into the KV (advancing backend.nPast) before calling generate(), then hands
+    // generate() only the last chunk as promptIds. On a hybrid model (Qwen3.5)
+    // rollback throws; the fallback re-prefills `rollbackTo` tokens from generate's
+    // own token mirror. Without contextTokens that mirror holds only the short tail,
+    // so the re-prefill runs off the end and calls forwardAll([]) — the native layer
+    // then throws "lbc_session_decode_logits_all: n_tokens must be > 0".
+    const vocabSize = 4
+    const eosId = 3
+    const CONTEXT_LEN = 500 // tokens already prefilled into the KV before this turn
+
+    // prompt [0,0] → ngram draft [0]; batch position 0 sharp on token 1 → draft rejected.
+    const prefillLogits = sharpLogits(vocabSize, 2, 0)
+    const batchLogits = new Float32Array(2 * vocabSize)
+    batchLogits[0 * vocabSize + 1] = 100
+    batchLogits[1 * vocabSize + eosId] = 100
+    const tail = sharpLogits(vocabSize, 1, eosId)
+    const queue = [prefillLogits, batchLogits, tail, tail, tail, tail]
+    let qi = 0
+
+    // Hybrid backend: rollback always throws; forwardAll mirrors the native guard
+    // that rejects an empty token batch.
+    const backend: VerificationBackend = {
+      vocabSize,
+      nPast: CONTEXT_LEN,
+      async forwardAll(ids: Int32Array): Promise<Float32Array> {
+        if (ids.length === 0) {
+          throw new Error('lbc_session_decode_logits_all: n_tokens must be > 0')
+        }
+        this.nPast += ids.length
+        return queue[qi++] ?? new Float32Array(ids.length * vocabSize)
+      },
+      async forwardOne(_tokenId: number): Promise<Float32Array> {
+        this.nPast += 1
+        return queue[qi++] ?? new Float32Array(vocabSize)
+      },
+      async rollback(_newNPast: number): Promise<void> {
+        throw new Error('hybrid model: partial KV rollback unsupported')
+      },
+    }
+
+    const session = new SpeculativeSession(backend, eosId, undefined, {
+      enabled: true, ngramSize: 1, draftMax: 1, temperature: 0.01, topK: vocabSize,
+    })
+
+    // contextTokens = the CONTEXT_LEN tokens already in the KV; promptIds = [0,0] tail.
+    const result = await session.generate(
+      new Int32Array([0, 0]), 5, new Int32Array(CONTEXT_LEN),
+    )
+    expect(result.tokenIds.length).toBeGreaterThan(0)
+  })
+
   it('samples bonus token from last logit position when all drafts accepted', async () => {
     const vocabSize = 4
     const eosId = 3
@@ -218,5 +272,75 @@ describe('SpeculativeSession', () => {
 
     expect(result.specAcceptedTokens).toBe(1)
     expect(backend.rollbackCalls).toHaveLength(0)
+  })
+
+  it('thinking tokens do not count against the answer cap', async () => {
+    // thinkTokens {open:1, close:2}. Start in thinking (prompt ends with <think>).
+    // Generates 3 thinking tokens, then </think>, then exactly maxTokens (3) answer tokens.
+    const vocabSize = 10
+    const eosId = 9
+    const backend = new MockBackend(vocabSize, [
+      sharpLogits(vocabSize, 1, 5), // prefill → thinking token 5
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 2), // → </think>
+      sharpLogits(vocabSize, 1, 6), // answer
+      sharpLogits(vocabSize, 1, 7),
+      sharpLogits(vocabSize, 1, 8),
+      sharpLogits(vocabSize, 1, eosId),
+    ])
+    const session = new SpeculativeSession(
+      backend, eosId, undefined,
+      { ...DEFAULT_SPEC_CONFIG, enabled: false },
+      { open: 1, close: 2 },
+    )
+    // maxTokens = 3 (answer cap). Prompt [1] = <think> → starts in thinking phase.
+    const result = await session.generate(new Int32Array([1]), 3)
+    // 3 thinking + </think> + 3 answer. If thinking counted against maxTokens=3,
+    // generation would have stopped at [5,5,5] with no </think> and no answer.
+    expect(result.tokenIds).toEqual([5, 5, 5, 2, 6, 7, 8])
+  })
+
+  it('force-closes the thinking block when the thinking budget is exhausted', async () => {
+    // thinkingBudget = 3 (constructor override). Model never emits </think>.
+    const vocabSize = 10
+    const eosId = 9
+    const backend = new MockBackend(vocabSize, [
+      sharpLogits(vocabSize, 1, 5),     // prefill → thinking token 5
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 6),     // in-flight thinking token — discarded by force-close
+      sharpLogits(vocabSize, 1, 7),     // first answer token, sampled after </think> is fed
+      sharpLogits(vocabSize, 1, 8),
+      sharpLogits(vocabSize, 1, eosId),
+    ])
+    const session = new SpeculativeSession(
+      backend, eosId, undefined,
+      { ...DEFAULT_SPEC_CONFIG, enabled: false },
+      { open: 1, close: 2 },
+      3, // thinkingBudget override
+    )
+    const result = await session.generate(new Int32Array([1]), 2)
+    // 3 thinking tokens, then the injected </think> (token 2), then 2 answer tokens.
+    // Token 6 (the in-flight thinking continuation) is discarded — </think> is fed
+    // to the backend and the answer is sampled from post-</think> context.
+    expect(result.tokenIds).toEqual([5, 5, 5, 2, 7, 8])
+  })
+
+  it('a non-thinking model (no thinkTokens) is capped by maxTokens as before', async () => {
+    const vocabSize = 10
+    const eosId = 9
+    const backend = new MockBackend(vocabSize, [
+      sharpLogits(vocabSize, 1, 5),
+      sharpLogits(vocabSize, 1, 6),
+      sharpLogits(vocabSize, 1, 7),
+      sharpLogits(vocabSize, 1, 8),
+    ])
+    // No thinkTokens passed → thinking-budget mode off.
+    const session = new SpeculativeSession(backend, eosId, undefined, {
+      ...DEFAULT_SPEC_CONFIG, enabled: false,
+    })
+    const result = await session.generate(new Int32Array([1]), 3)
+    expect(result.tokenIds).toEqual([5, 6, 7])
   })
 })
