@@ -1,0 +1,502 @@
+{
+  "events": [
+    {
+      "type": "suite:start",
+      "suite": "latency",
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 0,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 40,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 37
+      },
+      "totalMs": 79,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 1,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 41,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 19
+      },
+      "totalMs": 61,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 2,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 24
+      },
+      "totalMs": 58,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 3,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 15,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 44
+      },
+      "totalMs": 59,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 4,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 19,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 41
+      },
+      "totalMs": 60,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 5,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 35,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 17
+      },
+      "totalMs": 54,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 6,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 43
+      },
+      "totalMs": 77,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 7,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 39,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 30
+      },
+      "totalMs": 69,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 8,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 17,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 35
+      },
+      "totalMs": 52,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 9,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 39,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 20
+      },
+      "totalMs": 60,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 10,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 51
+      },
+      "totalMs": 85,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 11,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 35,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 48
+      },
+      "totalMs": 83,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 12,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 41,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 39
+      },
+      "totalMs": 81,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 13,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 48,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 39
+      },
+      "totalMs": 87,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 14,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 12,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 26
+      },
+      "totalMs": 38,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 15,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 31,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 19
+      },
+      "totalMs": 52,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 16,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 30,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 37
+      },
+      "totalMs": 67,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 17,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 18,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 23
+      },
+      "totalMs": 42,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 18,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 42,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 59
+      },
+      "totalMs": 102,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 19,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 22,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 38
+      },
+      "totalMs": 60,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 20,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 29,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 33
+      },
+      "totalMs": 62,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 21,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 14,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 28
+      },
+      "totalMs": 43,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 22,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 13,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 32
+      },
+      "totalMs": 45,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 23,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 18,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 40
+      },
+      "totalMs": 58,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 24,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 38,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 32
+      },
+      "totalMs": 70,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 25,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 28,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 26
+      },
+      "totalMs": 54,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 26,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 34,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 29
+      },
+      "totalMs": 64,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 27,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 31,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 18
+      },
+      "totalMs": 49,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 28,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 29,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 35
+      },
+      "totalMs": 64,
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 29,
+      "stepRtts": {
+        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 19,
+        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 36
+      },
+      "totalMs": 55,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "latency",
+      "mode": "sim"
+    },
+    {
+      "type": "suite:start",
+      "suite": "throughput",
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 606814.8148148148,
+      "tokensPerSec": 18.51851851851852,
+      "batchSize": 1,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 2730666.6666666665,
+      "tokensPerSec": 83.33333333333333,
+      "batchSize": 4,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 8886237.288135594,
+      "tokensPerSec": 271.1864406779661,
+      "batchSize": 16,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 38130036.36363637,
+      "tokensPerSec": 1163.6363636363637,
+      "batchSize": 64,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 68200065.04065041,
+      "tokensPerSec": 2081.3008130081303,
+      "batchSize": 256,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "throughput",
+      "mode": "sim"
+    },
+    {
+      "type": "suite:start",
+      "suite": "split-strategy",
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        16,
+        32
+      ],
+      "latencyMs": 56,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        20,
+        32
+      ],
+      "latencyMs": 55.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        12,
+        32
+      ],
+      "latencyMs": 69.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        8,
+        16,
+        24,
+        32
+      ],
+      "latencyMs": 128,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        10,
+        17,
+        24,
+        32
+      ],
+      "latencyMs": 138,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        7,
+        14,
+        22,
+        32
+      ],
+      "latencyMs": 132,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        4,
+        8,
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
+      ],
+      "latencyMs": 255.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        5,
+        8,
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
+      ],
+      "latencyMs": 249,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27,
+        32
+      ],
+      "latencyMs": 239.5,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "split-strategy",
+      "mode": "sim"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "startedAt": "2026-05-28T18:53:19.098Z",
+  "finishedAt": "2026-05-28T18:53:34.563Z",
+  "config": {
+    "modelBlocks": 32,
+    "latencyMeanMs": 20,
+    "latencyJitterMs": 8
+  }
+}
