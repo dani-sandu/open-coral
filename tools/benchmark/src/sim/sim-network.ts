@@ -8,6 +8,8 @@ export interface SimNetworkOptions {
   modelBlocks: number
   latencyMeanMs: number
   latencyJitterMs: number
+  /** Opt-in: one-time handshake latency charged on first dial to a peer. 0 = peers pre-connected (default). */
+  dialLatencyMs?: number
 }
 
 /**
@@ -28,9 +30,47 @@ export class SimNetwork {
     const node = await VirtualNode.create({
       peers: () => this.peers(),
       dialProtocol: (target, protocol) => this.dialProtocol(target, protocol),
+      connect: (from, targetId) => this.connect(from, targetId),
+      connectionModeling: () => this.connectionModeling(),
+      getPeerIdObj: (id) => this.getPeerIdObj(id),
     })
     this.nodes.set(node.peerId, node)
     return node
+  }
+
+  /** True when connection modeling is active (dialLatencyMs > 0). */
+  connectionModeling(): boolean {
+    return (this.opts.dialLatencyMs ?? 0) > 0
+  }
+
+  sampleDialLatency(): number {
+    return Math.max(0, this.opts.dialLatencyMs ?? 0)
+  }
+
+  /** Resolve a peerId string to its VirtualNode's PeerId object (for getPeers). */
+  getPeerIdObj(peerId: string): import('@libp2p/interface').PeerId | undefined {
+    return this.nodes.get(peerId)?.peerIdObj
+  }
+
+  /**
+   * Establish a connection from `from` to `targetId`. No-op in auto-connected mode.
+   * Idempotent: already-connected → instant; concurrent dials share one handshake.
+   */
+  async connect(from: VirtualNode, targetId: string): Promise<void> {
+    if (!this.connectionModeling()) return
+    if (from.connected.has(targetId)) return
+    let inFlight = from.dialing.get(targetId)
+    if (!inFlight) {
+      inFlight = new Promise<void>(resolve => {
+        setTimeout(() => {
+          from.connected.add(targetId)
+          from.dialing.delete(targetId)
+          resolve()
+        }, this.sampleDialLatency())
+      })
+      from.dialing.set(targetId, inFlight)
+    }
+    await inFlight
   }
 
   /** Draw a latency sample from N(mean, jitter), clamped to [0, mean + 5*jitter]. */
@@ -59,16 +99,23 @@ export class SimNetwork {
    * initiator end. Throws if the target has no handler (models a dead peer
    * → triggers SequenceManager retry).
    */
-  async dialProtocol(target: PeerId, protocol: string): Promise<SimStream> {
+  async dialProtocol(target: PeerId, protocols: string | string[]): Promise<SimStream> {
     const node = this.nodes.get(target.toString())
     if (!node) throw new Error(`SimNetwork: no node for peer ${target.toString()}`)
-    const handler = node.handlers.get(protocol)
-    if (!handler) throw new Error(`SimNetwork: peer ${target.toString()} has no handler for ${protocol}`)
+
+    const wanted = Array.isArray(protocols) ? protocols : [protocols]
+    const chosen = wanted.find(p => node.handlers.has(p))
+    if (!chosen) {
+      throw new Error(`SimNetwork: peer ${target.toString()} supports none of [${wanted.join(', ')}]`)
+    }
+    const handler = node.handlers.get(chosen)!
 
     const a2b = new Channel() // initiator → responder
     const b2a = new Channel() // responder → initiator
     const initiator = new SimStream(a2b, b2a)
     const responder = new SimStream(b2a, a2b)
+    initiator.protocol = chosen
+    responder.protocol = chosen
 
     const latency = this.sampleLatency()
     setTimeout(() => { void Promise.resolve(handler(responder)).catch(() => {}) }, latency)

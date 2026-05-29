@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { SimNetwork } from './sim/sim-network'
 import { loadOrCreateIdentity } from '../../../src/main/identity'
-import { registerInferenceHandlerV3 } from '../../../src/p2p/inference-protocol'
+import { registerInferenceHandlerV3, registerInferenceHandlerV4 } from '../../../src/p2p/inference-protocol'
 import { generatePartitions } from './suites/partitions'
 import { runLatencySuite } from './suites/latency'
 import { runThroughputSuite } from './suites/throughput'
@@ -55,6 +55,7 @@ export async function runSimBenchmark(cfg: CliConfig, sink: EventSink): Promise<
     for (let i = 0; i < maxNodes; i++) {
       const w = await net.addNode()
       await registerInferenceHandlerV3(w.libp2p, async (input) => input, identity)
+      await registerInferenceHandlerV4(w.libp2p, async (input) => input, identity)
       workers.push(w)
     }
 

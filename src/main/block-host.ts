@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { AsyncBlockRunner } from '../inference/native-worker'
 import { BlockRegistry } from '../p2p/block-registry'
-import { registerInferenceHandlerV3 } from '../p2p/inference-protocol'
+import { registerInferenceHandlerV3, registerInferenceHandlerV4 } from '../p2p/inference-protocol'
 import { registerKVHandler } from '../p2p/kv-protocol'
 import { getCurrentModel } from './model-manager'
 import { SequenceManager } from '../inference/sequence-manager'
@@ -125,6 +125,9 @@ export function setupBlockHostIPC(
     await registry.start()
 
     await registerInferenceHandlerV3(node.libp2p, async (input, nTokens) => {
+      return runner.forward(input, nTokens)
+    }, getNodeIdentity())
+    await registerInferenceHandlerV4(node.libp2p, async (input, nTokens) => {
       return runner.forward(input, nTokens)
     }, getNodeIdentity())
 

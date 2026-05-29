@@ -6,6 +6,14 @@ import { SimStream } from './sim-stream'
 
 type StreamHandler = (stream: SimStream) => void | Promise<void>
 
+type SimNet = {
+  peers(): VirtualNode[]
+  dialProtocol(target: PeerId, protocol: string | string[]): Promise<SimStream>
+  connect(from: VirtualNode, targetId: string): Promise<void>
+  connectionModeling(): boolean
+  getPeerIdObj(id: string): PeerId | undefined
+}
+
 /**
  * Minimal OpenCoralNode whose libp2p surface is backed by a SimNetwork.
  * Implements exactly the methods SequenceManager.runChain + sendInferenceRequestV3 touch.
@@ -14,22 +22,37 @@ export class VirtualNode implements OpenCoralNode {
   readonly peerIdObj: PeerId
   readonly handlers = new Map<string, StreamHandler>()
   readonly libp2p: any
+  readonly connected = new Set<string>()
+  readonly dialing = new Map<string, Promise<void>>()
 
   private constructor(
     peerIdObj: PeerId,
-    private readonly net: { peers(): VirtualNode[]; dialProtocol(target: PeerId, protocol: string): Promise<SimStream> },
+    private readonly net: SimNet,
   ) {
     this.peerIdObj = peerIdObj
     const self = this
     this.libp2p = {
       peerId: peerIdObj,
       getPeers(): PeerId[] {
-        // Report every other node as connected so runChain skips dialing.
+        if (self.net.connectionModeling()) {
+          return [...self.connected]
+            .map(id => self.net.getPeerIdObj(id))
+            .filter((p): p is PeerId => p !== undefined)
+        }
         return self.net.peers().filter(p => p !== self).map(p => p.peerIdObj)
       },
       getConnections(): unknown[] { return [] },
-      async dial(): Promise<void> { /* no-op: in-process, already "connected" */ },
-      async dialProtocol(target: PeerId, protocol: string): Promise<SimStream> {
+      async dial(addr?: { getPeerId?: () => string | null; getComponents?: () => Array<{ name: string; value: string }> }): Promise<void> {
+        let targetId: string | null = null
+        if (typeof addr?.getPeerId === 'function') {
+          targetId = addr.getPeerId()
+        } else if (typeof addr?.getComponents === 'function') {
+          const p2p = addr.getComponents().find(c => c.name === 'p2p')
+          targetId = p2p?.value ?? null
+        }
+        if (targetId) await self.net.connect(self, targetId)
+      },
+      async dialProtocol(target: PeerId, protocol: string | string[]): Promise<SimStream> {
         return self.net.dialProtocol(target, protocol)
       },
       async handle(protocol: string, handler: StreamHandler, _opts?: unknown): Promise<void> {
@@ -39,7 +62,7 @@ export class VirtualNode implements OpenCoralNode {
     }
   }
 
-  static async create(net: { peers(): VirtualNode[]; dialProtocol(target: PeerId, protocol: string): Promise<SimStream> }): Promise<VirtualNode> {
+  static async create(net: SimNet): Promise<VirtualNode> {
     const key = await generateKeyPair('Ed25519')
     const peerIdObj = peerIdFromPrivateKey(key)
     return new VirtualNode(peerIdObj, net)
@@ -47,5 +70,5 @@ export class VirtualNode implements OpenCoralNode {
 
   get peerId(): string { return this.peerIdObj.toString() }
   get multiaddrs(): string[] { return [`/ip4/127.0.0.1/tcp/0/p2p/${this.peerId}`] }
-  async stop(): Promise<void> { this.handlers.clear() }
+  async stop(): Promise<void> { this.handlers.clear(); this.connected.clear(); this.dialing.clear() }
 }

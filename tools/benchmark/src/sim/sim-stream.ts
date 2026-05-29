@@ -6,6 +6,9 @@ import { Channel } from './channel'
  * Only the subset of the Stream API used by stream-utils.ts is implemented.
  */
 export class SimStream implements AsyncIterable<Uint8Array> {
+  /** Negotiated protocol id, set by SimNetwork.dialProtocol. */
+  protocol = ''
+
   constructor(
     private readonly write: Channel,
     private readonly read: Channel,

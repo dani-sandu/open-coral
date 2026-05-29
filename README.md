@@ -45,15 +45,19 @@ Early development — this is an experimental rebuild, not a production system.
 - [x] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`, `chain-plan-cache.ts`)
 
 ### Phase 2
-- [ ] **P2-1** Float16 hidden-state wire format — 2× wire-size reduction per hop (`inference-protocol.ts`)
-- [ ] **P2-2** Pre-dial next peer during compute — remove 1 handshake RTT per hop (`sequence-manager.ts`)
+- [x] **P2-0** Simulation benchmark harness — drives the real `SequenceManager`/V3 protocol over an in-process transport, no model required (`tools/benchmark/`)
+- [x] **P2-1** Float16 hidden-state wire format — ~2× wire-size reduction per hop via new V4 protocol + V3 fallback (`inference-protocol.ts`, `float16.ts`)
+- [x] **P2-2** Pre-dial next peer during compute — overlap handshakes with compute, ~1 handshake on the critical path (`sequence-manager.ts`)
 - [ ] **P2-3** Zero-copy input tensor transfer — remove memcpy on every forward call (`native-worker.ts`)
 - [ ] **P2-4** FlashAttention compile flag — ~2× prefill speedup on long contexts (build config)
-- [ ] **P2-5** Background routing table refresh — fully eliminate DHT from inference hot path (`sequence-manager.ts`)
+- [ ] **P2-5** Background routing table refresh — fully eliminate DHT from inference hot path (`sequence-manager.ts`) — *refresh capability implemented; block-host wiring pending*
 - [ ] **P2-6** StreamingLLM KV eviction policy — constant KV memory regardless of conversation length (`kv-session-registry.ts`)
 - [ ] **P2-7** NgramCache cleanup on session end — reduce GC pressure on long sessions (`speculative-session.ts`)
 - [ ] **P2-8** DDTree-style tree verification — +20–40% speculative acceptance length, no native changes (`speculative-session.ts`)
-- [ ] **P2-9** Per-phase latency profiler — IPC / network / sig-verify / forward breakdown per hop
+- [x] **P2-9** Per-phase latency profiler — initiator-side sign / send / wait / verify breakdown per hop, surfaced via the harness (`sequence-manager.ts`, `inference-protocol.ts`)
+- [ ] **P2-10** PEARL adaptive draft length — adapt draft length per token / per-peer RTT (`speculative-session.ts`)
+- [ ] **P2-11** MARS rollback-aware verification — margin-aware acceptance, fewer rollbacks (`speculative-session.ts`)
+- [ ] **P2-12** SpecPipe pipeline-bubble elimination during speculation — overlap draft submission with verification across hops (`sequence-manager.ts`, `kv-chain.ts`)
 
 ### Phase 3
 - [ ] **P3-1** Prefill/decode role separation + chunked prefill — disaggregated pipeline, pull-based KV transfer

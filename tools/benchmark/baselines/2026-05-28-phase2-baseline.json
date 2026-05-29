@@ -9,300 +9,1080 @@
       "type": "latency:sample",
       "runIndex": 0,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 40,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 37
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 20.766499999999994,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 28.938999999999993
       },
-      "totalMs": 79,
+      "totalMs": 52,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 20.766499999999994,
+          "phases": {
+            "signMs": 0.4876000000000005,
+            "sendMs": 0.22510000000001185,
+            "waitMs": 19.5372,
+            "verifyMs": 0.11050000000000182
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 28.938999999999993,
+          "phases": {
+            "signMs": 0.12299999999999045,
+            "sendMs": 0.030000000000001137,
+            "waitMs": 28.627499999999998,
+            "verifyMs": 0.10310000000001196
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 1,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 41,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 19
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 15.929900000000004,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 31.237400000000008
       },
-      "totalMs": 61,
+      "totalMs": 47,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 15.929900000000004,
+          "phases": {
+            "signMs": 0.12399999999999523,
+            "sendMs": 0.025200000000012324,
+            "waitMs": 15.622299999999996,
+            "verifyMs": 0.10679999999999268
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.237400000000008,
+          "phases": {
+            "signMs": 0.1272000000000162,
+            "sendMs": 0.025999999999982037,
+            "waitMs": 30.938000000000017,
+            "verifyMs": 0.09850000000000136
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 2,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 24
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 38.819800000000015,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 14.246999999999957
       },
-      "totalMs": 58,
+      "totalMs": 54,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 38.819800000000015,
+          "phases": {
+            "signMs": 0.12049999999999272,
+            "sendMs": 0.021900000000016462,
+            "waitMs": 38.085999999999984,
+            "verifyMs": 0.5482999999999834
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 14.246999999999957,
+          "phases": {
+            "signMs": 0.5027999999999793,
+            "sendMs": 0.11440000000004602,
+            "waitMs": 12.921999999999969,
+            "verifyMs": 0.573599999999999
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 3,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 15,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 44
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 30.149500000000046,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 16.86189999999999
       },
-      "totalMs": 59,
+      "totalMs": 48,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.149500000000046,
+          "phases": {
+            "signMs": 0.8006999999999493,
+            "sendMs": 0.16800000000000637,
+            "waitMs": 28.452800000000025,
+            "verifyMs": 0.5450999999999908
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 16.86189999999999,
+          "phases": {
+            "signMs": 0.8930000000000291,
+            "sendMs": 0.09780000000000655,
+            "waitMs": 14.676999999999964,
+            "verifyMs": 1.061300000000017
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 4,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 19,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 41
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 20.74290000000002,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 28.816599999999994
       },
-      "totalMs": 60,
+      "totalMs": 51,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 20.74290000000002,
+          "phases": {
+            "signMs": 1.0343999999999482,
+            "sendMs": 0.35820000000001073,
+            "waitMs": 18.480999999999995,
+            "verifyMs": 0.6073000000000093
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 28.816599999999994,
+          "phases": {
+            "signMs": 0.955099999999959,
+            "sendMs": 0.35540000000003147,
+            "waitMs": 26.873199999999997,
+            "verifyMs": 0.3191999999999666
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 5,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 35,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 17
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 31.355700000000013,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 16.205200000000048
       },
-      "totalMs": 54,
+      "totalMs": 48,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.355700000000013,
+          "phases": {
+            "signMs": 0.3117000000000303,
+            "sendMs": 0.05259999999998399,
+            "waitMs": 30.37990000000002,
+            "verifyMs": 0.5230999999999995
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 16.205200000000048,
+          "phases": {
+            "signMs": 0.5339000000000169,
+            "sendMs": 0.0655999999999608,
+            "waitMs": 14.709400000000016,
+            "verifyMs": 0.7808999999999742
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 6,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 43
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 42.08729999999997,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 29.551800000000014
       },
-      "totalMs": 77,
+      "totalMs": 73,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 42.08729999999997,
+          "phases": {
+            "signMs": 0.57650000000001,
+            "sendMs": 0.061399999999991905,
+            "waitMs": 40.2602,
+            "verifyMs": 1.0437000000000012
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.551800000000014,
+          "phases": {
+            "signMs": 0.9574000000000069,
+            "sendMs": 0.22410000000002128,
+            "waitMs": 27.693299999999965,
+            "verifyMs": 0.5267000000000053
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 7,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 39,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 30
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 14.841000000000008,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 16.24150000000003
       },
-      "totalMs": 69,
+      "totalMs": 32,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 14.841000000000008,
+          "phases": {
+            "signMs": 0.5740999999999872,
+            "sendMs": 0.11870000000004666,
+            "waitMs": 13.438699999999983,
+            "verifyMs": 0.5691999999999666
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 16.24150000000003,
+          "phases": {
+            "signMs": 0.5831000000000017,
+            "sendMs": 0.09140000000002146,
+            "waitMs": 14.501099999999951,
+            "verifyMs": 0.9591000000000349
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 8,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 17,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 35
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 31.026100000000042,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 30.188699999999926
       },
-      "totalMs": 52,
+      "totalMs": 62,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.026100000000042,
+          "phases": {
+            "signMs": 0.7568999999999733,
+            "sendMs": 0.06960000000003674,
+            "waitMs": 29.576999999999998,
+            "verifyMs": 0.37379999999996016
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 30.188699999999926,
+          "phases": {
+            "signMs": 0.3387000000000171,
+            "sendMs": 0.030399999999985994,
+            "waitMs": 29.30690000000004,
+            "verifyMs": 0.41420000000005075
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 9,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 39,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 20
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 53.84529999999995,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 32.38329999999996
       },
-      "totalMs": 60,
+      "totalMs": 87,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 53.84529999999995,
+          "phases": {
+            "signMs": 0.286200000000008,
+            "sendMs": 0.04769999999996344,
+            "waitMs": 52.92000000000007,
+            "verifyMs": 0.5160999999999376
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 32.38329999999996,
+          "phases": {
+            "signMs": 0.5272999999999683,
+            "sendMs": 0.07519999999999527,
+            "waitMs": 30.433700000000044,
+            "verifyMs": 1.2173999999999978
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 10,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 33,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 51
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 30.50660000000005,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 14.931600000000003
       },
-      "totalMs": 85,
+      "totalMs": 47,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.50660000000005,
+          "phases": {
+            "signMs": 0.9859000000000151,
+            "sendMs": 0.10159999999996217,
+            "waitMs": 28.335900000000038,
+            "verifyMs": 0.8560999999999694
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 14.931600000000003,
+          "phases": {
+            "signMs": 0.7822999999999638,
+            "sendMs": 0.10990000000003874,
+            "waitMs": 12.9606,
+            "verifyMs": 0.8928999999999405
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 11,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 35,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 48
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 35.74569999999994,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 14.113800000000083
       },
-      "totalMs": 83,
+      "totalMs": 51,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 35.74569999999994,
+          "phases": {
+            "signMs": 0.8217999999999392,
+            "sendMs": 0.11610000000007403,
+            "waitMs": 34.11990000000003,
+            "verifyMs": 0.5072999999999865
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 14.113800000000083,
+          "phases": {
+            "signMs": 0.5272999999999683,
+            "sendMs": 0.08680000000003929,
+            "waitMs": 13.053199999999947,
+            "verifyMs": 0.3106000000000222
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 12,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 41,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 39
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 15.559600000000046,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 31.10489999999993
       },
-      "totalMs": 81,
+      "totalMs": 48,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 15.559600000000046,
+          "phases": {
+            "signMs": 0.3651999999999589,
+            "sendMs": 0.04409999999995762,
+            "waitMs": 14.436200000000099,
+            "verifyMs": 0.592899999999986
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.10489999999993,
+          "phases": {
+            "signMs": 0.4110999999999194,
+            "sendMs": 0.08190000000001874,
+            "waitMs": 30.15190000000007,
+            "verifyMs": 0.3546000000000049
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 13,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 48,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 39
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 27.829700000000003,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 24.58089999999993
       },
-      "totalMs": 87,
+      "totalMs": 53,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 27.829700000000003,
+          "phases": {
+            "signMs": 0.31759999999997035,
+            "sendMs": 0.056100000000014916,
+            "waitMs": 27.053999999999974,
+            "verifyMs": 0.29340000000001965
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 24.58089999999993,
+          "phases": {
+            "signMs": 0.27490000000000236,
+            "sendMs": 0.024999999999977263,
+            "waitMs": 23.596900000000005,
+            "verifyMs": 0.5575999999999794
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 14,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 12,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 26
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 31.487899999999968,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 37.49700000000007
       },
-      "totalMs": 38,
+      "totalMs": 70,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.487899999999968,
+          "phases": {
+            "signMs": 0.6391999999999598,
+            "sendMs": 0.059799999999995634,
+            "waitMs": 30.11850000000004,
+            "verifyMs": 0.554300000000012
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 37.49700000000007,
+          "phases": {
+            "signMs": 0.5679999999999836,
+            "sendMs": 0.1128999999999678,
+            "waitMs": 36.146600000000035,
+            "verifyMs": 0.549199999999928
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 15,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 31,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 19
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 30.729100000000017,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 16.566900000000032
       },
-      "totalMs": 52,
+      "totalMs": 48,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.729100000000017,
+          "phases": {
+            "signMs": 0.588100000000054,
+            "sendMs": 0.11710000000005039,
+            "waitMs": 29.269999999999982,
+            "verifyMs": 0.5457000000000107
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 16.566900000000032,
+          "phases": {
+            "signMs": 0.5671000000000959,
+            "sendMs": 0.11569999999994707,
+            "waitMs": 14.681400000000053,
+            "verifyMs": 1.0218999999999596
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 16,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 30,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 37
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 35.51649999999995,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 29.478500000000167
       },
-      "totalMs": 67,
+      "totalMs": 66,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 35.51649999999995,
+          "phases": {
+            "signMs": 0.8756000000000768,
+            "sendMs": 0.1853999999999587,
+            "waitMs": 33.983600000000024,
+            "verifyMs": 0.24489999999991596
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.478500000000167,
+          "phases": {
+            "signMs": 0.27350000000001273,
+            "sendMs": 0.05859999999984211,
+            "waitMs": 28.782900000000154,
+            "verifyMs": 0.24119999999993524
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 17,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 18,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 23
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 14.901299999999992,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 31.517299999999977
       },
-      "totalMs": 42,
+      "totalMs": 47,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 14.901299999999992,
+          "phases": {
+            "signMs": 0.2718999999999596,
+            "sendMs": 0.048800000000028376,
+            "waitMs": 14.251500000000078,
+            "verifyMs": 0.23779999999987922
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.517299999999977,
+          "phases": {
+            "signMs": 0.24649999999996908,
+            "sendMs": 0.02369999999996253,
+            "waitMs": 30.797500000000127,
+            "verifyMs": 0.37429999999994834
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 18,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 42,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 59
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 38.84480000000008,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 29.213400000000092
       },
-      "totalMs": 102,
+      "totalMs": 69,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 38.84480000000008,
+          "phases": {
+            "signMs": 0.3848000000000411,
+            "sendMs": 0.0442000000000462,
+            "waitMs": 37.55660000000012,
+            "verifyMs": 0.7876999999998588
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.213400000000092,
+          "phases": {
+            "signMs": 0.563799999999901,
+            "sendMs": 0.045200000000022555,
+            "waitMs": 28.21250000000009,
+            "verifyMs": 0.2716000000000349
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 19,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 22,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 38
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 35.697599999999966,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 34.61419999999998
       },
-      "totalMs": 60,
+      "totalMs": 71,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 35.697599999999966,
+          "phases": {
+            "signMs": 0.31179999999994834,
+            "sendMs": 0.04330000000004475,
+            "waitMs": 34.44739999999979,
+            "verifyMs": 0.8106999999999971
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 34.61419999999998,
+          "phases": {
+            "signMs": 0.5705000000000382,
+            "sendMs": 0.11099999999987631,
+            "waitMs": 32.821500000000015,
+            "verifyMs": 0.9908000000000357
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 20,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 29,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 33
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 44.97210000000018,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 31.920900000000074
       },
-      "totalMs": 62,
+      "totalMs": 77,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 44.97210000000018,
+          "phases": {
+            "signMs": 1.0267999999998665,
+            "sendMs": 0.1830000000002201,
+            "waitMs": 43.12779999999998,
+            "verifyMs": 0.506099999999833
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.920900000000074,
+          "phases": {
+            "signMs": 0.5583999999998923,
+            "sendMs": 0.08600000000001273,
+            "waitMs": 30.269999999999982,
+            "verifyMs": 0.8964000000000851
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 21,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 14,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 28
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 36.568300000000136,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 30.80060000000003
       },
-      "totalMs": 43,
+      "totalMs": 68,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 36.568300000000136,
+          "phases": {
+            "signMs": 0.8900000000001,
+            "sendMs": 0.17270000000007713,
+            "waitMs": 34.80399999999986,
+            "verifyMs": 0.5507000000000062
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 30.80060000000003,
+          "phases": {
+            "signMs": 0.5731000000000677,
+            "sendMs": 0.11189999999987776,
+            "waitMs": 29.4516000000001,
+            "verifyMs": 0.5549000000000888
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 22,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 13,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 32
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 30.613599999999906,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 39.13480000000004
       },
-      "totalMs": 45,
+      "totalMs": 70,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.613599999999906,
+          "phases": {
+            "signMs": 0.623600000000124,
+            "sendMs": 0.13639999999986685,
+            "waitMs": 29.184900000000198,
+            "verifyMs": 0.5477999999998246
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 39.13480000000004,
+          "phases": {
+            "signMs": 0.564200000000028,
+            "sendMs": 0.11560000000008586,
+            "waitMs": 37.49409999999989,
+            "verifyMs": 0.8529000000000906
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 23,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 18,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 40
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 28.850400000000036,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 32.339100000000144
       },
-      "totalMs": 58,
+      "totalMs": 61,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 28.850400000000036,
+          "phases": {
+            "signMs": 0.854799999999841,
+            "sendMs": 0.11770000000001346,
+            "waitMs": 27.16859999999997,
+            "verifyMs": 0.5744000000001961
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 32.339100000000144,
+          "phases": {
+            "signMs": 0.4894000000001597,
+            "sendMs": 0.08699999999998909,
+            "waitMs": 30.948799999999892,
+            "verifyMs": 0.7341000000001259
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 24,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 38,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 32
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 20.286499999999933,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 46.85110000000009
       },
-      "totalMs": 70,
+      "totalMs": 67,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 20.286499999999933,
+          "phases": {
+            "signMs": 0.6948999999999614,
+            "sendMs": 0.12059999999996762,
+            "waitMs": 18.80880000000002,
+            "verifyMs": 0.5397000000000389
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 46.85110000000009,
+          "phases": {
+            "signMs": 0.5538000000001375,
+            "sendMs": 0.11879999999996471,
+            "waitMs": 45.53309999999988,
+            "verifyMs": 0.5471999999999753
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 25,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 28,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 26
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 32.807399999999916,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 34.2505000000001
       },
-      "totalMs": 54,
+      "totalMs": 67,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 32.807399999999916,
+          "phases": {
+            "signMs": 0.5981999999999061,
+            "sendMs": 0.1168999999999869,
+            "waitMs": 31.02780000000007,
+            "verifyMs": 0.8734999999999218
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 34.2505000000001,
+          "phases": {
+            "signMs": 0.5900000000001455,
+            "sendMs": 0.1192999999998392,
+            "waitMs": 33.14779999999996,
+            "verifyMs": 0.2841000000000804
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 26,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 34,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 29
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 33.289200000000164,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 29.481900000000223
       },
-      "totalMs": 64,
+      "totalMs": 63,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 33.289200000000164,
+          "phases": {
+            "signMs": 0.2865999999999076,
+            "sendMs": 0.04940000000010514,
+            "waitMs": 31.80289999999991,
+            "verifyMs": 1.0732000000000426
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.481900000000223,
+          "phases": {
+            "signMs": 0.5547999999998865,
+            "sendMs": 0.12040000000001783,
+            "waitMs": 28.173099999999977,
+            "verifyMs": 0.5072000000000116
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 27,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 31,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 18
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 39.090599999999995,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 27.91280000000006
       },
-      "totalMs": 49,
+      "totalMs": 67,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 39.090599999999995,
+          "phases": {
+            "signMs": 0.3163999999999305,
+            "sendMs": 0.05510000000003856,
+            "waitMs": 37.724500000000035,
+            "verifyMs": 0.9173999999998159
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 27.91280000000006,
+          "phases": {
+            "signMs": 0.8889999999998963,
+            "sendMs": 0.13949999999999818,
+            "waitMs": 26.492100000000164,
+            "verifyMs": 0.2319999999999709
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 28,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 29,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 35
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 35.01749999999993,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 13.717599999999948
       },
-      "totalMs": 64,
+      "totalMs": 49,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 35.01749999999993,
+          "phases": {
+            "signMs": 0.2315000000000964,
+            "sendMs": 0.0385999999998603,
+            "waitMs": 33.74240000000009,
+            "verifyMs": 0.9447999999999865
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 13.717599999999948,
+          "phases": {
+            "signMs": 0.8847000000000662,
+            "sendMs": 0.15399999999999636,
+            "waitMs": 12.276000000000067,
+            "verifyMs": 0.2619999999999436
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
       "type": "latency:sample",
       "runIndex": 29,
       "stepRtts": {
-        "12D3KooWRgDyTLT4jDry5LagnB3Q8CnHjmR35iJ1DdgABDL5Tjnr": 19,
-        "12D3KooWB98hYoTRvoRRrbhoanV5BWwyy7tcmiBDWes4BLrMTrwn": 36
+        "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX": 33.06140000000005,
+        "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH": 15.397200000000112
       },
-      "totalMs": 55,
+      "totalMs": 49,
+      "hops": [
+        {
+          "peerId": "12D3KooWE3GhdheBiBtah5njJJ1gCQq6iw7oruY9y453Yj4nkZSX",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 33.06140000000005,
+          "phases": {
+            "signMs": 0.31150000000002365,
+            "sendMs": 0.04930000000013024,
+            "waitMs": 32.29009999999994,
+            "verifyMs": 0.3442999999999756
+          }
+        },
+        {
+          "peerId": "12D3KooWHxo5G8sMPrLP7w9E7o2LT6CeXMd2DwB5bwryQQFaprgH",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 15.397200000000112,
+          "phases": {
+            "signMs": 0.4108000000001084,
+            "sendMs": 0.03019999999992251,
+            "waitMs": 14.45659999999998,
+            "verifyMs": 0.4356000000000222
+          }
+        }
+      ],
       "mode": "sim"
     },
     {
@@ -317,36 +1097,36 @@
     },
     {
       "type": "throughput:sample",
-      "bytesPerSec": 606814.8148148148,
-      "tokensPerSec": 18.51851851851852,
+      "bytesPerSec": 474898.55072463764,
+      "tokensPerSec": 14.492753623188404,
       "batchSize": 1,
       "mode": "sim"
     },
     {
       "type": "throughput:sample",
-      "bytesPerSec": 2730666.6666666665,
-      "tokensPerSec": 83.33333333333333,
+      "bytesPerSec": 1872457.1428571427,
+      "tokensPerSec": 57.14285714285714,
       "batchSize": 4,
       "mode": "sim"
     },
     {
       "type": "throughput:sample",
-      "bytesPerSec": 8886237.288135594,
-      "tokensPerSec": 271.1864406779661,
+      "bytesPerSec": 5637505.376344086,
+      "tokensPerSec": 172.04301075268816,
       "batchSize": 16,
       "mode": "sim"
     },
     {
       "type": "throughput:sample",
-      "bytesPerSec": 38130036.36363637,
-      "tokensPerSec": 1163.6363636363637,
+      "bytesPerSec": 17924376.068376068,
+      "tokensPerSec": 547.008547008547,
       "batchSize": 64,
       "mode": "sim"
     },
     {
       "type": "throughput:sample",
-      "bytesPerSec": 68200065.04065041,
-      "tokensPerSec": 2081.3008130081303,
+      "bytesPerSec": 61680941.176470585,
+      "tokensPerSec": 1882.3529411764705,
       "batchSize": 256,
       "mode": "sim"
     },
@@ -368,7 +1148,7 @@
         16,
         32
       ],
-      "latencyMs": 56,
+      "latencyMs": 54,
       "mode": "sim"
     },
     {
@@ -379,7 +1159,7 @@
         20,
         32
       ],
-      "latencyMs": 55.5,
+      "latencyMs": 69,
       "mode": "sim"
     },
     {
@@ -390,7 +1170,7 @@
         12,
         32
       ],
-      "latencyMs": 69.5,
+      "latencyMs": 60,
       "mode": "sim"
     },
     {
@@ -403,7 +1183,7 @@
         24,
         32
       ],
-      "latencyMs": 128,
+      "latencyMs": 133,
       "mode": "sim"
     },
     {
@@ -416,7 +1196,7 @@
         24,
         32
       ],
-      "latencyMs": 138,
+      "latencyMs": 120.5,
       "mode": "sim"
     },
     {
@@ -429,7 +1209,7 @@
         22,
         32
       ],
-      "latencyMs": 132,
+      "latencyMs": 132.5,
       "mode": "sim"
     },
     {
@@ -446,7 +1226,7 @@
         28,
         32
       ],
-      "latencyMs": 255.5,
+      "latencyMs": 267,
       "mode": "sim"
     },
     {
@@ -463,7 +1243,7 @@
         28,
         32
       ],
-      "latencyMs": 249,
+      "latencyMs": 259.5,
       "mode": "sim"
     },
     {
@@ -480,7 +1260,7 @@
         27,
         32
       ],
-      "latencyMs": 239.5,
+      "latencyMs": 231,
       "mode": "sim"
     },
     {
@@ -492,8 +1272,8 @@
       "type": "done"
     }
   ],
-  "startedAt": "2026-05-28T18:53:19.098Z",
-  "finishedAt": "2026-05-28T18:53:34.563Z",
+  "startedAt": "2026-05-28T19:36:45.650Z",
+  "finishedAt": "2026-05-28T19:37:01.095Z",
   "config": {
     "modelBlocks": 32,
     "latencyMeanMs": 20,

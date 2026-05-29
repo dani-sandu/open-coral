@@ -52,4 +52,39 @@ describe('runLatencySuite', () => {
     }
     rmSync(dir, { recursive: true })
   })
+
+  it('attaches a per-hop phase breakdown (hops) to each latency:sample', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'coral-lat-hops-'))
+    const identity = await loadOrCreateIdentity(dir)
+    const nEmbd = 8
+
+    const net = new SimNetwork({ latencyMeanMs: 5, latencyJitterMs: 1, modelBlocks: 2 })
+    const client = await net.addNode()
+    const w1 = await net.addNode()
+    const w2 = await net.addNode()
+    for (const w of [w1, w2]) {
+      await registerInferenceHandlerV3(w.libp2p, async (input) => input, identity)
+    }
+
+    const events: BenchmarkEvent[] = []
+    await runLatencySuite({
+      client, workers: [w1, w2], identity,
+      boundaries: [0, 1, 2], modelBlocks: 2, hiddenSize: nEmbd,
+      runs: 3, sink: e => events.push(e),
+    })
+
+    const samples = events.filter(e => e.type === 'latency:sample')
+    expect(samples.length).toBe(3)
+    for (const s of samples) {
+      if (s.type !== 'latency:sample') continue
+      expect(s.hops).toBeDefined()
+      expect(s.hops!.length).toBe(2) // two remote hops
+      for (const h of s.hops!) {
+        expect(h.phases).toBeDefined()
+        const p = h.phases!
+        expect(Number.isFinite(p.signMs + p.sendMs + p.waitMs + p.verifyMs)).toBe(true)
+      }
+    }
+    rmSync(dir, { recursive: true })
+  })
 })

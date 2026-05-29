@@ -45,14 +45,15 @@ export async function runLatencySuite(opts: LatencySuiteOptions): Promise<void> 
       totalBlocks: modelBlocks, hiddenSize, identity, latencyTracker: tracker,
     })
     const input = new Float32Array(1 * hiddenSize).fill(0.1) // 1-token decode step
+    const hopLog: import('../../../src/inference/sequence-manager').HopTiming[] = []
     const t0 = Date.now()
-    await mgr.runChain(chain, input, 1, `lat-${runIndex}`)
+    await mgr.runChain(chain, input, 1, `lat-${runIndex}`, hopLog)
     const totalMs = Date.now() - t0
 
     const stepRtts: Record<string, number> = {}
     for (const w of usedWorkers) stepRtts[w.peerId] = tracker.getEstimate(w.peerId)
 
-    sink({ type: 'latency:sample', runIndex, stepRtts, totalMs, mode: 'sim' })
+    sink({ type: 'latency:sample', runIndex, stepRtts, totalMs, hops: hopLog, mode: 'sim' })
   }
 
   sink({ type: 'suite:end', suite: 'latency', mode: 'sim' })

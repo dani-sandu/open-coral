@@ -26,18 +26,23 @@ export async function runThroughputSuite(opts: ThroughputSuiteOptions): Promise<
 
   for (const batchSize of batchSizes) {
     const input = new Float32Array(batchSize * hiddenSize).fill(0.1)
+    const hopLog: import('../../../../src/inference/sequence-manager').HopTiming[] = []
     const t0 = Date.now()
-    await mgr.runChain(chain, input, batchSize, `tp-${batchSize}`)
+    await mgr.runChain(chain, input, batchSize, `tp-${batchSize}`, hopLog)
     const seconds = Math.max((Date.now() - t0) / 1000, 1e-6)
 
-    // Raw tensor bytes moved across every hop (V3 sends raw Float32).
-    const bytesPerHop = batchSize * hiddenSize * 4
-    const totalBytes = bytesPerHop * chain.length
+    // Sum actual encoded request bytes per hop (fp16 vs fp32 shows here).
+    // Local hops report no wireBytes — fall back to the fp32 tensor size.
+    let totalBytes = 0
+    for (const hop of hopLog) {
+      totalBytes += hop.wireBytes ?? (batchSize * hiddenSize * 4)
+    }
     sink({
       type: 'throughput:sample',
       bytesPerSec: totalBytes / seconds,
       tokensPerSec: batchSize / seconds,
       batchSize,
+      totalWireBytes: totalBytes,
       mode: 'sim',
     })
   }
