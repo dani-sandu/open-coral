@@ -3,6 +3,7 @@ import {
   SpeculativeSession,
   LocalVerificationBackend,
   DEFAULT_SPEC_CONFIG,
+  adaptiveDraftCap,
   type VerificationBackend,
 } from '../../src/inference/speculative-session'
 import { THINKING_TOKEN_BUDGET } from '../../src/inference/thinking-budget'
@@ -50,6 +51,28 @@ function sharpLogits(vocabSize: number, nTokens: number, id: number): Float32Arr
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('adaptiveDraftCap', () => {
+  it('returns draftMax at full acceptance and draftMin at zero acceptance', () => {
+    expect(adaptiveDraftCap(1, 1, 5)).toBe(5)
+    expect(adaptiveDraftCap(0, 1, 5)).toBe(1)
+  })
+
+  it('scales linearly between min and max', () => {
+    expect(adaptiveDraftCap(0.5, 1, 5)).toBe(3) // round(1 + 0.5*4)
+    expect(adaptiveDraftCap(0.25, 1, 5)).toBe(2) // round(1 + 0.25*4) = round(2)
+  })
+
+  it('clamps acceptEwma outside [0,1]', () => {
+    expect(adaptiveDraftCap(2, 1, 5)).toBe(5)
+    expect(adaptiveDraftCap(-0.5, 1, 5)).toBe(1)
+  })
+
+  it('returns draftMax when draftMax <= draftMin (no adaptation room)', () => {
+    expect(adaptiveDraftCap(0, 5, 3)).toBe(3)
+    expect(adaptiveDraftCap(0.5, 2, 2)).toBe(2)
+  })
+})
 
 describe('SpeculativeSession', () => {
   it('generates at least one token on a simple prompt', async () => {

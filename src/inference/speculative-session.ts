@@ -1,5 +1,5 @@
 import { NgramCache } from './ngram-cache'
-import { sampleTopK, softmaxProb } from './sampler'
+import { sampleTopK, marsAccept } from './sampler'
 import { ThinkingBudget, THINKING_TOKEN_BUDGET, hasOpenThinkBlock, type ThinkTokens } from './thinking-budget'
 import type { AsyncBlockRunner } from './native-worker'
 
@@ -17,6 +17,14 @@ export interface SpecConfig {
   draftMax: number
   temperature: number
   topK: number
+  /** MARS margin-aware accept: deterministically accept a draft within this ratio of the
+   *  top token's probability (reduces rollbacks). 0 disables (pure speculative sampling). */
+  marsMarginRatio?: number
+  /** Adapt draft length to the recent acceptance rate (PEARL-style). When false, always
+   *  attempts up to draftMax. Output distribution is unchanged either way. */
+  adaptiveDraft?: boolean
+  /** Minimum adaptive draft length (floor when acceptance is low). */
+  draftMin?: number
 }
 
 export const DEFAULT_SPEC_CONFIG: SpecConfig = {
@@ -25,6 +33,25 @@ export const DEFAULT_SPEC_CONFIG: SpecConfig = {
   draftMax: 5,
   temperature: 0.7,
   topK: 40,
+  marsMarginRatio: 0.9,
+  adaptiveDraft: true,
+  draftMin: 1,
+}
+
+// EWMA smoothing for the running draft-acceptance signal that drives adaptive length.
+const DRAFT_ACCEPT_ALPHA = 0.3
+
+/**
+ * Adaptive draft length (PEARL-style, adapted for the n-gram drafter which has no
+ * per-token confidence): scale the draft cap between draftMin and draftMax by the
+ * recent acceptance-rate EWMA. High acceptance → draft more; low → draft less to
+ * avoid wasted forward+rollback. Output distribution is unchanged — this only sets
+ * how many drafts are verified per step, not the accept/reject correctness.
+ */
+export function adaptiveDraftCap(acceptEwma: number, draftMin: number, draftMax: number): number {
+  if (draftMax <= draftMin) return draftMax
+  const clamped = Math.max(0, Math.min(1, acceptEwma))
+  return Math.round(draftMin + clamped * (draftMax - draftMin))
 }
 
 export interface GenerateResult {
@@ -103,7 +130,7 @@ export class SpeculativeSession {
   ): Promise<GenerateResult> {
     const { backend, config } = this
     const { vocabSize } = backend
-    const { temperature, topK, enabled, ngramSize, draftMax } = config
+    const { temperature, topK, enabled, ngramSize, draftMax, marsMarginRatio = 0, adaptiveDraft = false, draftMin = 1 } = config
 
     const generatedIds: number[] = []
     let specDraftTokens = 0
@@ -128,6 +155,9 @@ export class SpeculativeSession {
       this.thinkTokens, this.thinkingBudget, maxTokens,
       hasOpenThinkBlock(allTokens, this.thinkTokens),
     )
+
+    // Adaptive draft length (PEARL): running acceptance EWMA, starts optimistic.
+    let acceptEwma = 1
 
     while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
@@ -155,7 +185,8 @@ export class SpeculativeSession {
       // nextToken was always destined to be pushed before any addToken call.
       allTokens.push(nextToken)
       const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
-      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
+      const draftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+      const maxDrafts = Math.min(draftTokens.length, draftCap, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
         // Single-token path
@@ -185,11 +216,10 @@ export class SpeculativeSession {
         let terminated = false  // EOS/EOT accepted as draft — stop outer loop without sampling bonus
 
         for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
-          // Speculative sampling (Leviathan et al. 2023):
-          // n-gram draft is a point mass on draftTokens[i], so accept with p_target[draftTokens[i]]
-          const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
-
-          if (Math.random() < pAccept) {
+          // Speculative sampling (Leviathan et al. 2023) + MARS margin-aware accept:
+          // accept the n-gram draft stochastically with p_target[draft], OR deterministically
+          // when it is a plausible runner-up within marsMarginRatio of the top probability.
+          if (marsAccept(allLogits, i * vocabSize, vocabSize, draftTokens[i], marsMarginRatio)) {
             accepted++
             specAcceptedTokens++
 
@@ -226,6 +256,10 @@ export class SpeculativeSession {
           }
         }
 
+        if (adaptiveDraft && maxDrafts > 0) {
+          acceptEwma = DRAFT_ACCEPT_ALPHA * (accepted / maxDrafts) + (1 - DRAFT_ACCEPT_ALPHA) * acceptEwma
+        }
+
         if (terminated) break
         if (!rejected) {
           // All drafts accepted: sample bonus token from position after last draft
@@ -245,7 +279,7 @@ export class SpeculativeSession {
   ): AsyncGenerator<number> {
     const { backend, config } = this
     const { vocabSize } = backend
-    const { temperature, topK, enabled, ngramSize, draftMax } = config
+    const { temperature, topK, enabled, ngramSize, draftMax, marsMarginRatio = 0, adaptiveDraft = false, draftMin = 1 } = config
 
     const allTokens: number[] = [...contextTokens, ...promptIds]
     const ngramCache = new NgramCache(ngramSize, draftMax)
@@ -262,6 +296,9 @@ export class SpeculativeSession {
       this.thinkTokens, this.thinkingBudget, maxTokens,
       hasOpenThinkBlock(allTokens, this.thinkTokens),
     )
+
+    // Adaptive draft length (PEARL): running acceptance EWMA, starts optimistic.
+    let acceptEwma = 1
 
     while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
@@ -283,7 +320,8 @@ export class SpeculativeSession {
 
       allTokens.push(nextToken)
       const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
-      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
+      const draftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+      const maxDrafts = Math.min(draftTokens.length, draftCap, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
         yield nextToken
@@ -308,8 +346,7 @@ export class SpeculativeSession {
         let terminated = false
 
         for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
-          const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
-          if (Math.random() < pAccept) {
+          if (marsAccept(allLogits, i * vocabSize, vocabSize, draftTokens[i], marsMarginRatio)) {
             accepted++
             if (draftTokens[i] === this.eosTokenId) { terminated = true; break }
             if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
@@ -334,6 +371,10 @@ export class SpeculativeSession {
             rejected = true
             break
           }
+        }
+
+        if (adaptiveDraft && maxDrafts > 0) {
+          acceptEwma = DRAFT_ACCEPT_ALPHA * (accepted / maxDrafts) + (1 - DRAFT_ACCEPT_ALPHA) * acceptEwma
         }
 
         if (terminated) break

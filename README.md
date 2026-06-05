@@ -55,8 +55,8 @@ Early development — this is an experimental rebuild, not a production system.
 - [ ] **P2-7** NgramCache cleanup on session end — reduce GC pressure on long sessions (`speculative-session.ts`)
 - [ ] **P2-8** DDTree-style tree verification — +20–40% speculative acceptance length, no native changes (`speculative-session.ts`)
 - [x] **P2-9** Per-phase latency profiler — initiator-side sign / send / wait / verify breakdown per hop, surfaced via the harness (`sequence-manager.ts`, `inference-protocol.ts`)
-- [ ] **P2-10** PEARL adaptive draft length — adapt draft length per token / per-peer RTT (`speculative-session.ts`)
-- [ ] **P2-11** MARS rollback-aware verification — margin-aware acceptance, fewer rollbacks (`speculative-session.ts`)
+- [x] **P2-10** PEARL adaptive draft length — acceptance-EWMA-driven draft cap, output-preserving (`speculative-session.ts`)
+- [x] **P2-11** MARS margin-aware acceptance — accept plausible runner-ups within a margin of the top token, fewer rollbacks (`speculative-session.ts`)
 - [ ] **P2-12** SpecPipe pipeline-bubble elimination during speculation — overlap draft submission with verification across hops (`sequence-manager.ts`, `kv-chain.ts`)
 
 ### Phase 3
