@@ -14,6 +14,7 @@ import ModelFiles from './ModelFiles'
 import ModelPreview from './ModelPreview'
 import ModelDownload from './ModelDownload'
 import cmp from '../shared/components.module.css'
+import { friendlyIpcError } from '../../utils/format'
 
 // ── Sub-view type ──────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export default function ModelsPanel(): React.JSX.Element {
             await refresh()
             setView('home')
           } catch (e) {
-            setError(String(e))
+            setError(friendlyIpcError(e))
             setView('home')
           }
         } else if (p.error) {
@@ -116,7 +117,7 @@ export default function ModelsPanel(): React.JSX.Element {
       const m = await window.opencoral.loadModelPath(entry.path)
       setActiveModel(m)
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
     }
   }, [])
 
@@ -130,7 +131,7 @@ export default function ModelsPanel(): React.JSX.Element {
         await refresh()
       }
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
     } finally {
       setLoading(false)
     }
@@ -144,7 +145,7 @@ export default function ModelsPanel(): React.JSX.Element {
       await window.opencoral.startHosting(hostBlockStart, hostBlockEnd)
       await refresh()
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
     } finally {
       setHostBusy(false)
     }
@@ -157,7 +158,7 @@ export default function ModelsPanel(): React.JSX.Element {
       await window.opencoral.stopHosting()
       await refresh()
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
     } finally {
       setHostBusy(false)
     }
@@ -172,7 +173,7 @@ export default function ModelsPanel(): React.JSX.Element {
       const r = await window.opencoral.hfSearch(query.trim())
       setResults(r)
       setView('search')
-    } catch (e) { setError(String(e)) }
+    } catch (e) { setError(friendlyIpcError(e)) }
     finally { setSearching(false) }
   }, [query])
 
@@ -191,7 +192,7 @@ export default function ModelsPanel(): React.JSX.Element {
       })
       setFiles(grouped)
       setView('files')
-    } catch (e) { setError(String(e)) }
+    } catch (e) { setError(friendlyIpcError(e)) }
     finally { setLoadingFiles(false) }
   }, [])
 
@@ -220,7 +221,7 @@ export default function ModelsPanel(): React.JSX.Element {
       const est = await window.opencoral.hfEstimateBlocks(previewFilename, 0, Math.min(3, p.totalBlocks - 1))
       setEstimate(est)
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
       setView('files')
     } finally { setPreviewLoading(false) }
   }, [selectedRepo])
@@ -255,7 +256,7 @@ export default function ModelsPanel(): React.JSX.Element {
         await window.opencoral.hfDownloadPartial(selectedRepo.id, canonicalFilename, pBlockStart, pBlockEnd)
       }
     } catch (e) {
-      setError(String(e))
+      setError(friendlyIpcError(e))
       setDownloading(false)
       setView('preview')
     }

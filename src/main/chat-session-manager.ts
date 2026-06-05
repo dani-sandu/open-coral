@@ -22,7 +22,7 @@ export interface SessionPhaseEvent {
 
 export interface InvalidationEvent {
   sessionId: string
-  reason: 'peer-drop' | 'model-change'
+  reason: 'peer-drop' | 'model-change' | 'hosting-change'
 }
 
 export interface RemoteKvHandle {
@@ -96,12 +96,25 @@ export class ChatSessionManager {
   }
 
   /** Tear down + emit invalidation so the renderer can show a recovery toast. */
-  async invalidateActive(reason: 'peer-drop' | 'model-change'): Promise<void> {
+  async invalidateActive(reason: InvalidationEvent['reason']): Promise<void> {
     if (!this.active) return
     const sid = this.active.sessionId
     await this.teardown(this.active)
     this.active = null
     this.deps.emitInvalidation({ sessionId: sid, reason })
+  }
+
+  /**
+   * Called whenever local hosting starts or stops. An active turn context's
+   * chain plan was computed against a now-stale local/remote split: if it had
+   * local steps, those depended on the host that just changed and the plan is
+   * no longer trustworthy — re-plan on the next message. Sessions that were
+   * already purely remote are unaffected.
+   */
+  notifyHostingChanged(): void {
+    if (this.active && this.active.chain.localSteps.length > 0) {
+      this.invalidateActive('hosting-change').catch(() => {})
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -258,7 +271,20 @@ export class ChatSessionManager {
     if (!planner) throw new Error('No chain planner available')
 
     this.deps.emitPhase({ sessionId, phase: 'planning' })
-    const chain = await planner.plan()
+    let chain
+    try {
+      chain = await planner.plan()
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err)
+      // Surface a recovery-actionable error instead of the planner's internal text.
+      if (/No peer found for blocks/i.test(msg)) {
+        const friendly = new Error('No host available for this model — start hosting locally or wait for a peer to connect.')
+        this.deps.emitPhase({ sessionId, phase: 'error', error: friendly.message })
+        throw friendly
+      }
+      this.deps.emitPhase({ sessionId, phase: 'error', error: msg })
+      throw err
+    }
 
     const session = await this.deps.store.load(sessionId)
     if (!session) throw new Error(`Session ${sessionId} not found`)
@@ -411,7 +437,7 @@ export class SequenceManagerChainPlanner implements ChainPlanner {
     localSteps: { blockStart: number; blockEnd: number }[]
     remoteSteps: { peerId: string; blockStart: number; blockEnd: number; multiaddr?: string }[]
   }> {
-    const steps = await this.mgr.planChainWithCandidates()
+    const steps = this.mgr.getCachedChain() ?? await this.mgr.planChainWithCandidates()
     const localSteps: { blockStart: number; blockEnd: number }[] = []
     const remoteSteps: { peerId: string; blockStart: number; blockEnd: number; multiaddr?: string }[] = []
     for (const s of steps) {

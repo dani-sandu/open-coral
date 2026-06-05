@@ -12,7 +12,6 @@ import type { OpenCoralNode } from '../p2p/node'
 import { getPeerBlockRange, getLatencyTracker, getNodeIdentity } from './index'
 import { KVSessionRegistry } from './kv-session-registry'
 import { runInference } from './inference-orchestrator'
-import { getChainPlanCached } from './chain-plan-cache'
 
 export interface HostingState {
   modelPath: string
@@ -52,6 +51,12 @@ interface ActiveHost {
 let activeHost: ActiveHost | null = null
 let cachedTokenizer: NativeTokenizer | null = null
 
+// Persistent SequenceManager: holds the P2-5 routing-refresh timer so chain plans
+// stay warm across IPC calls and the DHT stays off the inference hot path.
+// Disposed whenever the inputs that feed its constructor change (model, hosting
+// state); the next consumer re-creates and re-arms the refresh.
+let activeManager: SequenceManager | null = null
+
 // ── Shim runner for remote-only inference ────────────────────────────────────
 // Loaded from a shim GGUF (embed + output tensors, no blocks).
 // Used for embedTokens() and projectToLogits() when the user is not hosting blocks.
@@ -59,6 +64,7 @@ let shimRunner: AsyncBlockRunner | null = null
 
 
 export async function loadShimRunner(shimPath: string, totalBlocks: number, hiddenSize: number): Promise<void> {
+  disposeSequenceManager()
   if (shimRunner) {
     await shimRunner.dispose()
     shimRunner = null
@@ -76,6 +82,7 @@ export async function loadShimRunner(shimPath: string, totalBlocks: number, hidd
 }
 
 export async function disposeShimRunner(): Promise<void> {
+  disposeSequenceManager()
   if (shimRunner) {
     await shimRunner.dispose()
     shimRunner = null
@@ -85,6 +92,37 @@ export async function disposeShimRunner(): Promise<void> {
 
 export function getShimRunner(): AsyncBlockRunner | null {
   return shimRunner
+}
+
+/**
+ * Lazy-construct (and arm the routing refresh on) the persistent SequenceManager
+ * for the current node + model + hosting state. Returns null if no model is loaded.
+ * Callers must invalidate via `disposeSequenceManager()` when the inputs change.
+ */
+export function getSequenceManager(node: OpenCoralNode): SequenceManager | null {
+  const model = getCurrentModel()
+  if (!model) return null
+  if (activeManager) return activeManager
+  activeManager = new SequenceManager({
+    node,
+    localRunner: activeHost?.runner ?? null,
+    totalBlocks: model.totalBlocks,
+    hiddenSize: model.hiddenSize,
+    getPeerBlockRange,
+    latencyTracker: getLatencyTracker(),
+    identity: getNodeIdentity(),
+    repoId: model.repoId,
+  })
+  activeManager.startRoutingRefresh()
+  return activeManager
+}
+
+/** Stop the routing-refresh timer and drop the singleton. Safe to call when not constructed. */
+export function disposeSequenceManager(): void {
+  if (activeManager) {
+    activeManager.stopRoutingRefresh()
+    activeManager = null
+  }
 }
 
 // ── Block hosting IPC ─────────────────────────────────────────────────────────
@@ -109,6 +147,7 @@ export function setupBlockHostIPC(
       activeHost.registry.dispose()
       activeHost = null
     }
+    disposeSequenceManager()
 
     const runner = await AsyncBlockRunner.create({
       ...(model.shardFiles && model.shardFiles.length > 1
@@ -157,6 +196,7 @@ export function setupBlockHostIPC(
     await activeHost.runner.dispose()
     activeHost.registry.dispose()
     activeHost = null
+    disposeSequenceManager()
     onBlocksChanged([])
     console.log('[OpenCoral] Stopped hosting blocks')
   })
@@ -195,26 +235,15 @@ export function setupInferenceIPC(getNode: () => OpenCoralNode | null): void {
     if (!cachedTokenizer) throw new Error('Tokenizer not loaded — call loadShimRunner first')
     const tokenizer = cachedTokenizer
 
-    // Prefer activeHost runner for block computation; fall back to null for shim-only mode
-    const localRunner = activeHost?.runner ?? null
     // For embed/project: prefer shimRunner (guaranteed to have embed + output tensors).
     // activeHost.runner may not have them if hosting a partial block range.
     const embedRunner = shimRunner ?? activeHost?.runner
     if (!embedRunner) throw new Error('No runner available for embed/project')
 
-    const mgr = new SequenceManager({
-      node,
-      localRunner,
-      totalBlocks: model.totalBlocks,
-      hiddenSize: model.hiddenSize,
-      getPeerBlockRange,
-      latencyTracker: getLatencyTracker(),
-      identity: getNodeIdentity(),
-      repoId: model.repoId,
-    })
+    const mgr = getSequenceManager(node)
+    if (!mgr) throw new Error('No model loaded for SequenceManager')
 
-    const cacheKey = model.repoId ?? '__no_repo__'
-    const chain = await getChainPlanCached(cacheKey, () => mgr.planChainWithCandidates())
+    const chain = mgr.getCachedChain() ?? await mgr.planChainWithCandidates()
     const nEmbd = model.hiddenSize
 
     const t0 = Date.now()
@@ -270,15 +299,10 @@ export function setupCoverageIPC(getNode: () => OpenCoralNode | null): void {
       }
     }
 
-    const mgr = new SequenceManager({
-      node,
-      localRunner: activeHost?.runner ?? null,
-      totalBlocks: model.totalBlocks,
-      hiddenSize: model.hiddenSize,
-      getPeerBlockRange,
-      identity: getNodeIdentity(),
-      repoId: model.repoId,
-    })
+    const mgr = getSequenceManager(node)
+    if (!mgr) {
+      return { totalBlocks: model.totalBlocks, covered: [], missing: Array.from({ length: model.totalBlocks }, (_, i) => i), complete: false }
+    }
 
     const report = await mgr.checkCoverage()
     const suggestion = suggestBlockRange(report)

@@ -42,7 +42,7 @@ Early development — this is an experimental rebuild, not a production system.
 - [x] **P1-2** Batch `decodeToken` IPC — collapse 512 worker round-trips to batches of 4–8 (`inference-orchestrator.ts`)
 - [x] **P1-3** `Promise.all` peer queries — 300ms serial peer latency → ~30ms parallel (`sequence-manager.ts`)
 - [x] **P1-4** Remove spread copy in ngram lookup — O(n) → O(1) per token (`speculative-session.ts`)
-- [x] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`, `chain-plan-cache.ts`)
+- [x] **P1-5** Cache / skip chain plan — eliminate wasted DHT query before every inference (`block-host.ts`; later subsumed by P2-5 routing-refresh)
 
 ### Phase 2
 - [x] **P2-0** Simulation benchmark harness — drives the real `SequenceManager`/V3 protocol over an in-process transport, no model required (`tools/benchmark/`)
@@ -50,7 +50,7 @@ Early development — this is an experimental rebuild, not a production system.
 - [x] **P2-2** Pre-dial next peer during compute — overlap handshakes with compute, ~1 handshake on the critical path (`sequence-manager.ts`)
 - [ ] **P2-3** Zero-copy input tensor transfer — remove memcpy on every forward call (`native-worker.ts`)
 - [ ] **P2-4** FlashAttention compile flag — ~2× prefill speedup on long contexts (build config)
-- [ ] **P2-5** Background routing table refresh — fully eliminate DHT from inference hot path (`sequence-manager.ts`) — *refresh capability implemented; block-host wiring pending*
+- [x] **P2-5** Background routing table refresh — persistent `SequenceManager` in `block-host`/`index`, refresh timer keeps the chain plan warm and removes DHT from the inference hot path (`sequence-manager.ts`, `block-host.ts`)
 - [ ] **P2-6** StreamingLLM KV eviction policy — constant KV memory regardless of conversation length (`kv-session-registry.ts`)
 - [ ] **P2-7** NgramCache cleanup on session end — reduce GC pressure on long sessions (`speculative-session.ts`)
 - [ ] **P2-8** DDTree-style tree verification — +20–40% speculative acceptance length, no native changes (`speculative-session.ts`)

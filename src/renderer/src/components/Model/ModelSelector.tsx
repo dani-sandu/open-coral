@@ -3,6 +3,7 @@ import type { NetworkModelEntry, ModelInfo } from '../../types'
 import StatusDot from '../shared/StatusDot'
 import cmp from '../shared/components.module.css'
 import { useToast } from '../Toast/ToastProvider'
+import { friendlyIpcError } from '../../utils/format'
 
 interface ModelSelectorProps {
   currentModel: ModelInfo | null
@@ -49,8 +50,7 @@ export default function ModelSelector({ currentModel, onModelLoaded }: ModelSele
       const model = await window.opencoral.loadModelByHFIdentity(entry.repoId, entry.hfFilename)
       onModelLoaded(model)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      addToast(msg, 'error')
+      addToast(friendlyIpcError(e), 'error')
     } finally {
       setLoadingId(null)
     }

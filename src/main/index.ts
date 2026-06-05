@@ -3,7 +3,7 @@ import { join } from 'path'
 import { createOpenCoralNode, getBootstrapPeers, type OpenCoralNode } from '../p2p/node'
 import { inspectNetwork, type NetworkState } from '../p2p/network-inspector'
 import { setupModelIPC, getCurrentModel, subscribeModelChange } from './model-manager'
-import { setupBlockHostIPC, setupInferenceIPC, setupCoverageIPC, getActiveHost, getShimRunner, getCachedTokenizer } from './block-host'
+import { setupBlockHostIPC, setupInferenceIPC, setupCoverageIPC, getActiveHost, getShimRunner, getCachedTokenizer, getSequenceManager, disposeSequenceManager } from './block-host'
 import { setupHuggingFaceIPC } from './huggingface'
 import { registerModelInfoHandler, queryPeerModelInfo } from '../p2p/model-announce'
 import { DiscoveredModels } from '../p2p/discovered-models'
@@ -21,7 +21,6 @@ import {
   broadcastSessionPhase,
   broadcastSessionInvalidated,
 } from './chat-session-ipc'
-import { SequenceManager } from '../inference/sequence-manager'
 import { ApiServer } from './api-server'
 import { setupApiServerIPC } from './api-server-ipc'
 import { loadConfig } from './api-config'
@@ -47,18 +46,8 @@ export function getNodeIdentity(): NodeIdentity {
 
 function buildPlanner(): SequenceManagerChainPlanner | null {
   if (!openCoralNode) return null
-  const model = getCurrentModel()
-  if (!model) return null
-  const sm = new SequenceManager({
-    node: openCoralNode,
-    localRunner: getActiveHost()?.runner ?? null,
-    totalBlocks: model.totalBlocks,
-    hiddenSize: model.hiddenSize,
-    getPeerBlockRange,
-    latencyTracker: getLatencyTracker(),
-    identity: getNodeIdentity(),
-    repoId: model.repoId,
-  })
+  const sm = getSequenceManager(openCoralNode)
+  if (!sm) return null
   return new SequenceManagerChainPlanner({ node: openCoralNode, manager: sm })
 }
 
@@ -148,7 +137,12 @@ function setupNetworkModelIPC(): void {
 
 function setupIPC(): void {
   setupModelIPC()
-  setupBlockHostIPC(() => openCoralNode, (blocks) => { localBlocks = blocks })
+  setupBlockHostIPC(() => openCoralNode, (blocks) => {
+    localBlocks = blocks
+    // A start/stop-hosting event can invalidate an active chat whose chain
+    // included local steps. Purely remote sessions are left alone.
+    chatSessionManager?.notifyHostingChanged()
+  })
   setupInferenceIPC(() => openCoralNode)
   setupCoverageIPC(() => openCoralNode)
   setupHuggingFaceIPC()
@@ -188,6 +182,8 @@ function setupIPC(): void {
 
   subscribeModelChange(() => {
     chatSessionManager?.invalidateActive('model-change').catch(() => {})
+    // Bump the persistent SequenceManager so the next consumer rebuilds for the new model.
+    disposeSequenceManager()
   })
 
   ipcMain.handle('opencoral:get-network-state', (): NetworkState | null => {
@@ -283,6 +279,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async () => {
+  disposeSequenceManager()
   if (sessionStore) {
     try { await sessionStore.flush() } catch (err) { console.error('[OpenCoral] sessionStore.flush failed:', err) }
   }
