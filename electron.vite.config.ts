@@ -6,6 +6,8 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({
       exclude: [
+        'hono',
+        '@hono/node-server',
         'libp2p',
         '@libp2p/bootstrap',
         '@libp2p/tcp',

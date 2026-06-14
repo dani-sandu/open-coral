@@ -5,11 +5,12 @@ import { findCoralPeers, findModelPeers, type PeerBlockInfo } from '../p2p/dht'
 import { queryPeerModelInfo, type PeerModelInfoPayload } from '../p2p/model-announce'
 import type { PeerLatencyTracker } from '../p2p/peer-latency'
 import { DEFAULT_LATENCY_MS } from '../p2p/peer-latency'
-import { sendInferenceRequestV3 } from '../p2p/inference-protocol'
+import { sendInferenceRequestNegotiated, type RemoteHopPhases } from '../p2p/inference-protocol'
 import type { NodeIdentity } from '../main/identity'
 import { computeCoverage, type BlockCoverage, type CoverageReport } from './coverage'
 
 const HOP_PENALTY_MS = 50
+const ROUTING_REFRESH_INTERVAL_MS = 45_000
 
 /** Minimal interface for a block runner (sync BlockRunner or async AsyncBlockRunner). */
 export interface BlockRunnerLike {
@@ -42,6 +43,22 @@ export interface ChainStepWithCandidates {
   candidates: ChainStepCandidate[]
   blockStart: number
   blockEnd: number
+}
+
+/** Per-hop timing for one executed chain step. Collected when a hopLog is passed. */
+export interface HopTiming {
+  peerId: 'local' | string
+  blockStart: number
+  blockEnd: number
+  totalMs: number
+  /** Local hops only: time inside localRunner.forward (IPC + native forward, combined). */
+  forwardMs?: number
+  /** Remote hops only: initiator-observable phase breakdown. */
+  phases?: RemoteHopPhases
+  /** Remote hops only: negotiated protocol id (e.g. '/opencoral/inference/4.0.0'). */
+  protocol?: string
+  /** Remote hops only: encoded request size in bytes (fp16 halves the tensor portion). */
+  wireBytes?: number
 }
 
 export interface SequenceManagerOptions {
@@ -77,6 +94,9 @@ export class SequenceManager {
   private readonly identity: NodeIdentity
   private readonly repoId: string | undefined
 
+  private routingTable: ChainStepWithCandidates[] | null = null
+  private refreshTimer: ReturnType<typeof setInterval> | null = null
+
   constructor(opts: SequenceManagerOptions) {
     this.node = opts.node
     this.localRunner = opts.localRunner
@@ -86,6 +106,43 @@ export class SequenceManager {
     this.latencyTracker = opts.latencyTracker ?? null
     this.identity = opts.identity
     this.repoId = opts.repoId
+  }
+
+  /**
+   * Rebuild the cached routing table from the DHT (via planChainWithCandidates).
+   * A transient failure keeps the previous table rather than blanking routing.
+   */
+  async refreshRoutingTable(): Promise<void> {
+    try {
+      this.routingTable = await this.planChainWithCandidates()
+    } catch (err) {
+      console.warn(`[SequenceManager] routing-table refresh failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /**
+   * Start periodic routing-table refresh (Petals pattern): one immediate refresh,
+   * then every `intervalMs`. Idempotent — a second call while running is a no-op.
+   * The timer is unref'd so it never keeps the process alive on its own.
+   */
+  startRoutingRefresh(intervalMs = ROUTING_REFRESH_INTERVAL_MS): void {
+    if (this.refreshTimer) return
+    void this.refreshRoutingTable()
+    this.refreshTimer = setInterval(() => { void this.refreshRoutingTable() }, intervalMs)
+    ;(this.refreshTimer as { unref?: () => void }).unref?.()
+  }
+
+  /** Stop periodic refresh and release the timer. Safe to call when not running. */
+  stopRoutingRefresh(): void {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer)
+      this.refreshTimer = null
+    }
+  }
+
+  /** The most recently refreshed routing table, or null if never refreshed. */
+  getCachedChain(): ChainStepWithCandidates[] | null {
+    return this.routingTable
   }
 
   /**
@@ -145,6 +202,22 @@ export class SequenceManager {
   }
 
   /**
+   * Fire-and-forget dial of an upcoming hop's peer so its handshake overlaps the
+   * current hop's compute. Skips local/unknown/no-address/already-connected peers.
+   * Dial errors are swallowed — the hop will dial on demand if this didn't land.
+   */
+  private preDialPeer(peerId: string | undefined, addr: string | undefined): void {
+    if (!peerId || peerId === 'local' || !addr) return
+    try {
+      const pid = peerIdFromString(peerId)
+      if (this.node.libp2p.getPeers().some(p => p.equals(pid))) return
+      void this.node.libp2p.dial(multiaddr(addr)).catch(() => {})
+    } catch {
+      // Malformed peerId/addr — ignore; the on-demand dial path handles it.
+    }
+  }
+
+  /**
    * Execute a chain of inference steps, passing hidden states from one peer to the next.
    *
    * @param chain   Steps from planChain()
@@ -152,21 +225,37 @@ export class SequenceManager {
    * @param nTokens Number of tokens in the batch
    * @returns       Float32Array of shape [nTokens × hiddenSize] after all blocks
    */
-  async runChain(chain: ChainStep[], input: Float32Array, nTokens: number, requestId = 'no-trace'): Promise<Float32Array> {
+  async runChain(
+    chain: ChainStep[],
+    input: Float32Array,
+    nTokens: number,
+    requestId = 'no-trace',
+    hopLog?: HopTiming[],
+  ): Promise<Float32Array> {
     let current = input
+
+    // Pre-dial all hops in parallel before the loop so every handshake overlaps
+    // the chain's compute instead of sitting serially on the critical path.
+    for (const s of chain) this.preDialPeer(s.peerId, s.multiaddr)
 
     for (const step of chain) {
       if (step.peerId === 'local') {
         if (!this.localRunner) throw new Error('SequenceManager: local step but no localRunner')
+        const t0 = performance.now()
         current = await this.localRunner.forward(current, nTokens)
+        const forwardMs = performance.now() - t0
+        hopLog?.push({ peerId: 'local', blockStart: step.blockStart, blockEnd: step.blockEnd, totalMs: forwardMs, forwardMs })
       } else {
         const peerId = peerIdFromString(step.peerId)
         const isConnected = this.node.libp2p.getPeers().some(p => p.equals(peerId))
         if (!isConnected && step.multiaddr) {
           await this.node.libp2p.dial(multiaddr(step.multiaddr))
         }
-        const t0 = Date.now()
-        current = await sendInferenceRequestV3(
+        const t0 = performance.now()
+        let phases: RemoteHopPhases | undefined
+        let protocol: string | undefined
+        let wireBytes: number | undefined
+        current = await sendInferenceRequestNegotiated(
           this.node.libp2p,
           peerId,
           current,
@@ -174,8 +263,14 @@ export class SequenceManager {
           this.hiddenSize,
           requestId,
           this.identity,
+          {
+            onPhases: p => { phases = p },
+            onWire: i => { protocol = i.protocol; wireBytes = i.requestBytes },
+          },
         )
-        this.latencyTracker?.record(step.peerId, Date.now() - t0)
+        const totalMs = performance.now() - t0
+        this.latencyTracker?.record(step.peerId, totalMs)
+        hopLog?.push({ peerId: step.peerId, blockStart: step.blockStart, blockEnd: step.blockEnd, totalMs, phases, protocol, wireBytes })
       }
     }
 
@@ -380,13 +475,21 @@ export class SequenceManager {
     input: Float32Array,
     nTokens: number,
     requestId = 'no-trace',
+    hopLog?: HopTiming[],
   ): Promise<Float32Array> {
     let current = input
+
+    // Pre-dial all hops in parallel before the loop so every handshake overlaps
+    // the chain's compute instead of sitting serially on the critical path.
+    for (const s of chain) this.preDialPeer(s.candidates[0]?.peerId, s.candidates[0]?.multiaddr)
 
     for (const step of chain) {
       if (step.candidates[0].peerId === 'local') {
         if (!this.localRunner) throw new Error('SequenceManager: local step but no localRunner')
+        const t0 = performance.now()
         current = await this.localRunner.forward(current, nTokens)
+        const forwardMs = performance.now() - t0
+        hopLog?.push({ peerId: 'local', blockStart: step.blockStart, blockEnd: step.blockEnd, totalMs: forwardMs, forwardMs })
         continue
       }
 
@@ -400,8 +503,11 @@ export class SequenceManager {
           if (!isConnected && candidate.multiaddr) {
             await this.node.libp2p.dial(multiaddr(candidate.multiaddr))
           }
-          const t0 = Date.now()
-          current = await sendInferenceRequestV3(
+          const t0 = performance.now()
+          let phases: RemoteHopPhases | undefined
+          let protocol: string | undefined
+          let wireBytes: number | undefined
+          current = await sendInferenceRequestNegotiated(
             this.node.libp2p,
             peerId,
             current,
@@ -409,8 +515,14 @@ export class SequenceManager {
             this.hiddenSize,
             requestId,
             this.identity,
+            {
+              onPhases: p => { phases = p },
+              onWire: i => { protocol = i.protocol; wireBytes = i.requestBytes },
+            },
           )
-          this.latencyTracker?.record(candidate.peerId, Date.now() - t0)
+          const totalMs = performance.now() - t0
+          this.latencyTracker?.record(candidate.peerId, totalMs)
+          hopLog?.push({ peerId: candidate.peerId, blockStart: step.blockStart, blockEnd: step.blockEnd, totalMs, phases, protocol, wireBytes })
           succeeded = true
           break
         } catch (err) {

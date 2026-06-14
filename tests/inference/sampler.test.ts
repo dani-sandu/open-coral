@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { sampleTopK, softmaxProb } from '../../src/inference/sampler'
+import { sampleTopK, softmaxProb, marsAccept } from '../../src/inference/sampler'
 
 function sharpLogits(vocabSize: number, peakId: number, peakValue = 100): Float32Array {
   const f = new Float32Array(vocabSize)
@@ -105,5 +105,44 @@ describe('softmaxProb', () => {
     const logits = new Float32Array(10)
     expect(() => softmaxProb(logits, 0, 10, -1)).toThrow(RangeError)
     expect(() => softmaxProb(logits, 0, 10, 10)).toThrow(RangeError)
+  })
+})
+
+describe('marsAccept', () => {
+  const f = (arr: number[]) => Float32Array.from(arr)
+
+  it('marginRatio<=0 reduces to the stochastic test (rng<p)', () => {
+    const logits = f([0, 0, 10]) // token 2 dominates
+    expect(marsAccept(logits, 0, 3, 0, 0, () => 0)).toBe(true)
+    expect(marsAccept(logits, 0, 3, 0, 0, () => 1)).toBe(false)
+  })
+
+  it('deterministically accepts the argmax regardless of rng (margin active)', () => {
+    const logits = f([0, 0, 10])
+    expect(marsAccept(logits, 0, 3, 2, 0.9, () => 1)).toBe(true)
+  })
+
+  it('accepts a plausible runner-up within the margin even when rng would reject', () => {
+    const draftLogit = 10 + Math.log(0.9) // p(draft)/p(top) = 0.9 exactly
+    const logits = f([draftLogit, 10])
+    expect(marsAccept(logits, 0, 2, 0, 0.9, () => 1)).toBe(true)
+  })
+
+  it('falls back to stochastic for a draft outside the margin', () => {
+    const logits = f([9, 10]) // delta -1, ratio ~0.368 < 0.9
+    expect(marsAccept(logits, 0, 2, 0, 0.9, () => 1)).toBe(false)
+    expect(marsAccept(logits, 0, 2, 0, 0.9, () => 0)).toBe(true)
+  })
+
+  it('honours the offset for multi-position logit buffers', () => {
+    const vocab = 2
+    const buf = f([0, 5, /*pos1:*/ 5, 0]) // pos1 top = idx0
+    expect(marsAccept(buf, 1 * vocab, vocab, 0, 0.9, () => 1)).toBe(true)
+  })
+
+  it('throws RangeError for out-of-range tokenId (matches softmaxProb)', () => {
+    const logits = f([1, 2, 3])
+    expect(() => marsAccept(logits, 0, 3, -1, 0.9)).toThrow(RangeError)
+    expect(() => marsAccept(logits, 0, 3, 3, 0.9)).toThrow(RangeError)
   })
 })

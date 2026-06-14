@@ -6,6 +6,7 @@ import cmp from '../shared/components.module.css'
 import styles from './NetworkView.module.css'
 import { animate } from 'animejs'
 import { usePeerEntrance, ANIMATION_ENABLED, DURATION_PEER } from '../../lib/anime'
+import { friendlyIpcError } from '../../utils/format'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
 
@@ -251,7 +252,7 @@ export default function NetworkView(): React.JSX.Element {
       setState(s)
       setError(null)
     } catch (err) {
-      setError(String(err))
+      setError(friendlyIpcError(err))
     }
   }, [])
 

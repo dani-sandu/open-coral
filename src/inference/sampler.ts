@@ -109,3 +109,45 @@ export function softmaxProb(
   }
   return Math.exp(logits[offset + tokenId] - maxVal) / sum
 }
+
+/**
+ * Speculative acceptance test with MARS margin-aware early-accept.
+ *
+ * Accepts the draft `tokenId` if EITHER:
+ *   - it is a plausible runner-up: p(draft)/p(top) >= marginRatio, which (since the
+ *     acceptance softmax is un-temperatured, matching softmaxProb) is equivalent to
+ *     `logit_draft - maxLogit >= ln(marginRatio)`; OR
+ *   - the standard stochastic test passes: `rng() < p_target(draft)`.
+ *
+ * `marginRatio <= 0` disables the margin path → identical to the prior stochastic test.
+ * `rng` is injectable for deterministic testing (defaults to Math.random).
+ */
+export function marsAccept(
+  logits: Float32Array,
+  offset: number,
+  vocabSize: number,
+  tokenId: number,
+  marginRatio: number,
+  rng: () => number = Math.random,
+): boolean {
+  if (tokenId < 0 || tokenId >= vocabSize) {
+    throw new RangeError(`tokenId ${tokenId} out of range [0, ${vocabSize})`)
+  }
+  let maxVal = -Infinity
+  for (let i = 0; i < vocabSize; i++) {
+    if (logits[offset + i] > maxVal) maxVal = logits[offset + i]
+  }
+  const draftDelta = logits[offset + tokenId] - maxVal // <= 0
+  if (marginRatio > 0) {
+    const logMarginThreshold = Math.log(marginRatio)
+    // Use epsilon tolerance for floating-point precision in log-space computations.
+    // Float32 → double conversion can introduce ~1e-7 error for typical log values.
+    if (draftDelta >= logMarginThreshold - 1e-6) return true
+  }
+  let sum = 0
+  for (let i = 0; i < vocabSize; i++) {
+    sum += Math.exp(logits[offset + i] - maxVal)
+  }
+  const p = Math.exp(draftDelta) / sum
+  return rng() < p
+}

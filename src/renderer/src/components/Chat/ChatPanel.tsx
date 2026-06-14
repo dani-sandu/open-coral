@@ -7,7 +7,7 @@ import StatusDot from '../shared/StatusDot'
 import styles from './ChatPanel.module.css'
 import cmp from '../shared/components.module.css'
 import { useToast } from '../Toast/ToastProvider'
-import { formatMissingRanges } from '../../utils/format'
+import { formatMissingRanges, friendlyIpcError } from '../../utils/format'
 import { animate, type JSAnimation } from 'animejs'
 import { ANIMATION_ENABLED, SPRING_TOKEN, DURATION_TOKEN } from '../../lib/anime'
 
@@ -299,8 +299,7 @@ export default function ChatPanel({
       // Server-side persisted both messages; the onSessionUpdated subscription
       // above will refetch the session and update the view.
     } catch (e) {
-      const errorText = e instanceof Error ? e.message : String(e)
-      addToast(errorText, 'error')
+      addToast(friendlyIpcError(e), 'error')
       // The user message was already persisted by main; refetch so the UI reflects it.
       const fresh = await window.opencoral.getSession(activeSession.id)
       setActiveSession(fresh)

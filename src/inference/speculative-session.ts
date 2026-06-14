@@ -1,5 +1,5 @@
 import { NgramCache } from './ngram-cache'
-import { sampleTopK, softmaxProb } from './sampler'
+import { sampleTopK, marsAccept } from './sampler'
 import { ThinkingBudget, THINKING_TOKEN_BUDGET, hasOpenThinkBlock, type ThinkTokens } from './thinking-budget'
 import type { AsyncBlockRunner } from './native-worker'
 
@@ -17,6 +17,18 @@ export interface SpecConfig {
   draftMax: number
   temperature: number
   topK: number
+  /** MARS margin-aware accept: deterministically accept a draft within this ratio of the
+   *  top token's probability (reduces rollbacks). 0 disables (pure speculative sampling). */
+  marsMarginRatio?: number
+  /** Adapt draft length to the recent acceptance rate (PEARL-style). When false, always
+   *  attempts up to draftMax. Output distribution is unchanged either way. */
+  adaptiveDraft?: boolean
+  /** Minimum adaptive draft length (floor when acceptance is low). */
+  draftMin?: number
+  /** SpecPipe pipeline depth: 1 = serial (default, today's behavior); 2 = optimistic two-step
+   *  pipelining (eagerly submit step N+1 while awaiting step N's verification). Only meaningful
+   *  when the backend is a `PipelinedKVChain` — the LocalVerificationBackend ignores this. */
+  pipelineDepth?: 1 | 2
 }
 
 export const DEFAULT_SPEC_CONFIG: SpecConfig = {
@@ -25,12 +37,38 @@ export const DEFAULT_SPEC_CONFIG: SpecConfig = {
   draftMax: 5,
   temperature: 0.7,
   topK: 40,
+  marsMarginRatio: 0.9,
+  adaptiveDraft: true,
+  draftMin: 1,
+  pipelineDepth: 1,
+}
+
+// EWMA smoothing for the running draft-acceptance signal that drives adaptive length.
+const DRAFT_ACCEPT_ALPHA = 0.3
+
+/**
+ * Adaptive draft length (PEARL-style, adapted for the n-gram drafter which has no
+ * per-token confidence): scale the draft cap between draftMin and draftMax by the
+ * recent acceptance-rate EWMA. High acceptance → draft more; low → draft less to
+ * avoid wasted forward+rollback. Output distribution is unchanged — this only sets
+ * how many drafts are verified per step, not the accept/reject correctness.
+ */
+export function adaptiveDraftCap(acceptEwma: number, draftMin: number, draftMax: number): number {
+  if (draftMax <= draftMin) return draftMax
+  const clamped = Math.max(0, Math.min(1, acceptEwma))
+  return Math.round(draftMin + clamped * (draftMax - draftMin))
 }
 
 export interface GenerateResult {
   tokenIds: number[]
   specDraftTokens: number
   specAcceptedTokens: number
+}
+
+function sameInt32(a: Int32Array, b: Int32Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
 }
 
 export class LocalVerificationBackend implements VerificationBackend {
@@ -103,7 +141,7 @@ export class SpeculativeSession {
   ): Promise<GenerateResult> {
     const { backend, config } = this
     const { vocabSize } = backend
-    const { temperature, topK, enabled, ngramSize, draftMax } = config
+    const { temperature, topK, enabled, ngramSize, draftMax, marsMarginRatio = 0, adaptiveDraft = false, draftMin = 1, pipelineDepth = 1 } = config
 
     const generatedIds: number[] = []
     let specDraftTokens = 0
@@ -129,9 +167,22 @@ export class SpeculativeSession {
       hasOpenThinkBlock(allTokens, this.thinkTokens),
     )
 
+    // Adaptive draft length (PEARL): running acceptance EWMA, starts optimistic.
+    let acceptEwma = 1
+
+    // Eager-submit (SpecPipe / P2-12): when pipelineDepth=2, pre-submit step N+1's
+    // batch BEFORE awaiting step N — see below. Because pre-submit advances
+    // backend.nPast optimistically, we track `safeNPast` as the logical
+    // "guaranteed-verified" KV position independent of any in-flight pre-submit.
+    let pendingForward: { batch: Int32Array; promise: Promise<Float32Array> } | null = null
+    let safeNPast = backend.nPast
+
     while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
       if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
+
+      // Logical iteration start — does NOT include any pending pre-submit writes.
+      const kvPositionAtIterationStart = safeNPast
 
       // Thinking budget spent without a </think> — inject one to force the
       // model into the answer phase. The </think> is fed through the backend so
@@ -155,15 +206,23 @@ export class SpeculativeSession {
       // nextToken was always destined to be pushed before any addToken call.
       allTokens.push(nextToken)
       const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
-      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
+      const draftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+      const maxDrafts = Math.min(draftTokens.length, draftCap, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
-        // Single-token path
+        // Single-token path. Any in-flight pre-submit was speculating a
+        // multi-token batch; its premise (matching speculative path) is wrong.
+        if (pendingForward) {
+          try { await pendingForward.promise } catch {}
+          await backend.rollback(safeNPast)
+          pendingForward = null
+        }
         generatedIds.push(nextToken)
         budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
 
         const logits = await backend.forwardOne(nextToken)
+        safeNPast += 1
         nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
       } else {
         // Speculative path: verify [nextToken, d0, d1, ...] in one batch
@@ -172,8 +231,56 @@ export class SpeculativeSession {
         for (let i = 0; i < maxDrafts; i++) batch[i + 1] = draftTokens[i]
 
         specDraftTokens += maxDrafts
-        const allLogits = await backend.forwardAll(batch)
-        const kvPositionAfterBatch = backend.nPast
+        let nForwardPromise: Promise<Float32Array>
+        if (pendingForward && pendingForward.batch.length === batch.length &&
+            sameInt32(pendingForward.batch, batch)) {
+          // The pending forward was speculatively submitted with this exact
+          // batch — reuse its logits. backend.nPast was already advanced
+          // optimistically at submit-time.
+          nForwardPromise = pendingForward.promise
+          pendingForward = null
+        } else {
+          if (pendingForward) {
+            // We pre-submitted but the real batch differs (rare: budget shrank,
+            // draftCap changed). Await + discard logits + rollback to a known
+            // good position before submitting the real batch.
+            try { await pendingForward.promise } catch {}
+            await backend.rollback(kvPositionAtIterationStart)
+            pendingForward = null
+          }
+          nForwardPromise = backend.forwardAll(batch)
+        }
+
+        // SpecPipe (P2-12) pre-submit BEFORE awaiting N: with depth=2, submit
+        // N+1's batch concurrently so its hops overlap N's hops on the chain.
+        // We don't yet know N's bonus token (logits haven't returned), so we
+        // PREDICT it via ngram. If prediction matches actual on the next
+        // iteration's batch check, we reuse the pre-submitted logits. Otherwise
+        // the pendingForward is discarded + rolled back like any mismatched
+        // pending. Output is unchanged either way.
+        if (pipelineDepth === 2 && speculationEnabled && budget.shouldContinue()) {
+          const speculativeAllTokens = allTokens.slice()
+          for (let j = 0; j < maxDrafts; j++) speculativeAllTokens.push(draftTokens[j])
+          const predictedNextCandidates = ngramCache.lookup(speculativeAllTokens)
+          if (predictedNextCandidates.length > 0) {
+            const predictedBonus = predictedNextCandidates[0]
+            speculativeAllTokens.push(predictedBonus)
+            const nextDrafts = ngramCache.lookup(speculativeAllTokens)
+            const nextDraftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+            const nextMaxDrafts = Math.min(nextDrafts.length, nextDraftCap, Math.max(0, budget.remaining() - 2 - maxDrafts))
+            if (nextMaxDrafts > 0) {
+              const nextBatch = new Int32Array(1 + nextMaxDrafts)
+              nextBatch[0] = predictedBonus
+              for (let j = 0; j < nextMaxDrafts; j++) nextBatch[j + 1] = nextDrafts[j]
+              pendingForward = { batch: nextBatch, promise: backend.forwardAll(nextBatch) }
+            }
+          }
+        }
+
+        const allLogits = await nForwardPromise
+        // Logical KV position after N's batch (independent of any in-flight
+        // pre-submit for iter N+1 — backend.nPast may be ahead).
+        const kvPositionAfterBatch = kvPositionAtIterationStart + batch.length
 
         // nextToken is always accepted (was already sampled from target distribution)
         generatedIds.push(nextToken)
@@ -185,11 +292,10 @@ export class SpeculativeSession {
         let terminated = false  // EOS/EOT accepted as draft — stop outer loop without sampling bonus
 
         for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
-          // Speculative sampling (Leviathan et al. 2023):
-          // n-gram draft is a point mass on draftTokens[i], so accept with p_target[draftTokens[i]]
-          const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
-
-          if (Math.random() < pAccept) {
+          // Speculative sampling (Leviathan et al. 2023) + MARS margin-aware accept:
+          // accept the n-gram draft stochastically with p_target[draft], OR deterministically
+          // when it is a plausible runner-up within marsMarginRatio of the top probability.
+          if (marsAccept(allLogits, i * vocabSize, vocabSize, draftTokens[i], marsMarginRatio)) {
             accepted++
             specAcceptedTokens++
 
@@ -203,9 +309,14 @@ export class SpeculativeSession {
             if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
           } else {
             // Draft rejected: sample corrected token from position i (the rejected slot's logits),
-            // then rollback KV cache to discard the unaccepted draft slots.
+            // then rollback KV cache to discard the unaccepted draft slots AND any pre-submitted
+            // iter-N+1 writes (whose all-accept premise was wrong).
             nextToken = sampleTopK(allLogits, vocabSize, i * vocabSize, temperature, topK)
-            const rollbackTo = kvPositionAfterBatch - (maxDrafts - accepted)
+            const rollbackTo = kvPositionAtIterationStart + 1 + accepted
+            if (pendingForward) {
+              try { await pendingForward.promise } catch {}
+              pendingForward = null
+            }
             try {
               await backend.rollback(rollbackTo)
             } catch {
@@ -219,6 +330,7 @@ export class SpeculativeSession {
               }
               speculationEnabled = false
             }
+            safeNPast = rollbackTo
             // KV is now in sync with the accepted prefix; trim allTokens to match.
             allTokens.length = rollbackTo
             rejected = true
@@ -226,10 +338,15 @@ export class SpeculativeSession {
           }
         }
 
+        if (adaptiveDraft && maxDrafts > 0) {
+          acceptEwma = DRAFT_ACCEPT_ALPHA * (accepted / maxDrafts) + (1 - DRAFT_ACCEPT_ALPHA) * acceptEwma
+        }
+
         if (terminated) break
         if (!rejected) {
           // All drafts accepted: sample bonus token from position after last draft
           nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, temperature, topK)
+          safeNPast = kvPositionAfterBatch
         }
       }
     }
@@ -245,7 +362,7 @@ export class SpeculativeSession {
   ): AsyncGenerator<number> {
     const { backend, config } = this
     const { vocabSize } = backend
-    const { temperature, topK, enabled, ngramSize, draftMax } = config
+    const { temperature, topK, enabled, ngramSize, draftMax, marsMarginRatio = 0, adaptiveDraft = false, draftMin = 1, pipelineDepth = 1 } = config
 
     const allTokens: number[] = [...contextTokens, ...promptIds]
     const ngramCache = new NgramCache(ngramSize, draftMax)
@@ -263,9 +380,18 @@ export class SpeculativeSession {
       hasOpenThinkBlock(allTokens, this.thinkTokens),
     )
 
+    // Adaptive draft length (PEARL): running acceptance EWMA, starts optimistic.
+    let acceptEwma = 1
+
+    let pendingForward: { batch: Int32Array; promise: Promise<Float32Array> } | null = null
+    let safeNPast = backend.nPast
+
     while (budget.shouldContinue()) {
       if (nextToken === this.eosTokenId) break
       if (this.eotTokenId !== undefined && nextToken === this.eotTokenId) break
+
+      // Logical iteration start — does NOT include any pending pre-submit writes.
+      const kvPositionAtIterationStart = safeNPast
 
       // Thinking budget spent without a </think> — feed one through the backend
       // so the KV reflects the phase change, emit it, and switch to the answer
@@ -283,21 +409,62 @@ export class SpeculativeSession {
 
       allTokens.push(nextToken)
       const draftTokens = speculationEnabled ? ngramCache.lookup(allTokens) : []
-      const maxDrafts = Math.min(draftTokens.length, Math.max(0, budget.remaining() - 1))
+      const draftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+      const maxDrafts = Math.min(draftTokens.length, draftCap, Math.max(0, budget.remaining() - 1))
 
       if (maxDrafts === 0) {
+        if (pendingForward) {
+          try { await pendingForward.promise } catch {}
+          await backend.rollback(safeNPast)
+          pendingForward = null
+        }
         yield nextToken
         budget.count(nextToken)
         if (enabled) ngramCache.addToken(nextToken, allTokens)
         const logits = await backend.forwardOne(nextToken)
+        safeNPast += 1
         nextToken = sampleTopK(logits, vocabSize, 0, temperature, topK)
       } else {
         const batch = new Int32Array(1 + maxDrafts)
         batch[0] = nextToken
         for (let i = 0; i < maxDrafts; i++) batch[i + 1] = draftTokens[i]
 
-        const allLogits = await backend.forwardAll(batch)
-        const kvPositionAfterBatch = backend.nPast
+        let nForwardPromise: Promise<Float32Array>
+        if (pendingForward && pendingForward.batch.length === batch.length &&
+            sameInt32(pendingForward.batch, batch)) {
+          nForwardPromise = pendingForward.promise
+          pendingForward = null
+        } else {
+          if (pendingForward) {
+            try { await pendingForward.promise } catch {}
+            await backend.rollback(kvPositionAtIterationStart)
+            pendingForward = null
+          }
+          nForwardPromise = backend.forwardAll(batch)
+        }
+
+        // SpecPipe (P2-12) pre-submit BEFORE awaiting N — see generate() for rationale.
+        if (pipelineDepth === 2 && speculationEnabled && budget.shouldContinue()) {
+          const speculativeAllTokens = allTokens.slice()
+          for (let j = 0; j < maxDrafts; j++) speculativeAllTokens.push(draftTokens[j])
+          const predictedNextCandidates = ngramCache.lookup(speculativeAllTokens)
+          if (predictedNextCandidates.length > 0) {
+            const predictedBonus = predictedNextCandidates[0]
+            speculativeAllTokens.push(predictedBonus)
+            const nextDrafts = ngramCache.lookup(speculativeAllTokens)
+            const nextDraftCap = adaptiveDraft ? adaptiveDraftCap(acceptEwma, draftMin, draftMax) : draftMax
+            const nextMaxDrafts = Math.min(nextDrafts.length, nextDraftCap, Math.max(0, budget.remaining() - 2 - maxDrafts))
+            if (nextMaxDrafts > 0) {
+              const nextBatch = new Int32Array(1 + nextMaxDrafts)
+              nextBatch[0] = predictedBonus
+              for (let j = 0; j < nextMaxDrafts; j++) nextBatch[j + 1] = nextDrafts[j]
+              pendingForward = { batch: nextBatch, promise: backend.forwardAll(nextBatch) }
+            }
+          }
+        }
+
+        const allLogits = await nForwardPromise
+        const kvPositionAfterBatch = kvPositionAtIterationStart + batch.length
 
         yield nextToken
         budget.count(nextToken)
@@ -308,8 +475,7 @@ export class SpeculativeSession {
         let terminated = false
 
         for (let i = 0; i < maxDrafts && budget.shouldContinue(); i++) {
-          const pAccept = softmaxProb(allLogits, i * vocabSize, vocabSize, draftTokens[i])
-          if (Math.random() < pAccept) {
+          if (marsAccept(allLogits, i * vocabSize, vocabSize, draftTokens[i], marsMarginRatio)) {
             accepted++
             if (draftTokens[i] === this.eosTokenId) { terminated = true; break }
             if (this.eotTokenId !== undefined && draftTokens[i] === this.eotTokenId) { terminated = true; break }
@@ -319,7 +485,11 @@ export class SpeculativeSession {
             if (enabled) ngramCache.addToken(draftTokens[i], allTokens)
           } else {
             nextToken = sampleTopK(allLogits, vocabSize, i * vocabSize, temperature, topK)
-            const rollbackTo = kvPositionAfterBatch - (maxDrafts - accepted)
+            const rollbackTo = kvPositionAtIterationStart + 1 + accepted
+            if (pendingForward) {
+              try { await pendingForward.promise } catch {}
+              pendingForward = null
+            }
             try {
               await backend.rollback(rollbackTo)
             } catch {
@@ -330,15 +500,21 @@ export class SpeculativeSession {
               }
               speculationEnabled = false
             }
+            safeNPast = rollbackTo
             allTokens.length = rollbackTo
             rejected = true
             break
           }
         }
 
+        if (adaptiveDraft && maxDrafts > 0) {
+          acceptEwma = DRAFT_ACCEPT_ALPHA * (accepted / maxDrafts) + (1 - DRAFT_ACCEPT_ALPHA) * acceptEwma
+        }
+
         if (terminated) break
         if (!rejected) {
           nextToken = sampleTopK(allLogits, vocabSize, maxDrafts * vocabSize, temperature, topK)
+          safeNPast = kvPositionAfterBatch
         }
       }
     }

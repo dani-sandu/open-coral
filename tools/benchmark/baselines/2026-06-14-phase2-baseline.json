@@ -1,0 +1,1579 @@
+{
+  "events": [
+    {
+      "type": "suite:start",
+      "suite": "latency",
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 0,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 30.055600000000013,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 30.15100000000001
+      },
+      "totalMs": 62,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.055600000000013,
+          "phases": {
+            "signMs": 0.9273999999999916,
+            "sendMs": 0.23100000000000875,
+            "waitMs": 28.085399999999993,
+            "verifyMs": 0.2990000000000066
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 30.15100000000001,
+          "phases": {
+            "signMs": 0.15099999999998204,
+            "sendMs": 0.026399999999995316,
+            "waitMs": 29.060000000000002,
+            "verifyMs": 0.8352000000000146
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 1,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 46.58759999999998,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 37.74879999999999
+      },
+      "totalMs": 85,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 46.58759999999998,
+          "phases": {
+            "signMs": 0.33549999999999613,
+            "sendMs": 0.05550000000002342,
+            "waitMs": 45.04389999999998,
+            "verifyMs": 1.0204999999999984
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 37.74879999999999,
+          "phases": {
+            "signMs": 0.549900000000008,
+            "sendMs": 0.07370000000000232,
+            "waitMs": 35.81469999999996,
+            "verifyMs": 1.1398000000000366
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 2,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 31.038099999999986,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 31.6943
+      },
+      "totalMs": 64,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.038099999999986,
+          "phases": {
+            "signMs": 0.6349999999999909,
+            "sendMs": 0.11220000000002983,
+            "waitMs": 28.99709999999999,
+            "verifyMs": 1.151299999999992
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.6943,
+          "phases": {
+            "signMs": 0.6049999999999613,
+            "sendMs": 0.17090000000001737,
+            "waitMs": 29.580399999999997,
+            "verifyMs": 1.172900000000027
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 3,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 52.07439999999997,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 29.18040000000002
+      },
+      "totalMs": 83,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 52.07439999999997,
+          "phases": {
+            "signMs": 0.6281999999999925,
+            "sendMs": 0.12920000000002574,
+            "waitMs": 49.69509999999997,
+            "verifyMs": 1.4476000000000226
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.18040000000002,
+          "phases": {
+            "signMs": 0.7078999999999951,
+            "sendMs": 0.12330000000002883,
+            "waitMs": 27.1644,
+            "verifyMs": 1.0305000000000177
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 4,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 37.58109999999999,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 32.82370000000003
+      },
+      "totalMs": 71,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 37.58109999999999,
+          "phases": {
+            "signMs": 0.5959999999999468,
+            "sendMs": 0.12980000000004566,
+            "waitMs": 35.48249999999996,
+            "verifyMs": 1.193300000000022
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 32.82370000000003,
+          "phases": {
+            "signMs": 0.6888999999999896,
+            "sendMs": 0.07079999999996289,
+            "waitMs": 29.913700000000006,
+            "verifyMs": 1.907100000000014
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 5,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 26.697099999999978,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 14.550299999999993
+      },
+      "totalMs": 42,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 26.697099999999978,
+          "phases": {
+            "signMs": 0.7244999999999777,
+            "sendMs": 0.08380000000005339,
+            "waitMs": 24.920399999999972,
+            "verifyMs": 0.8117999999999483
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 14.550299999999993,
+          "phases": {
+            "signMs": 0.3164000000000442,
+            "sendMs": 0.03769999999997253,
+            "waitMs": 13.651099999999929,
+            "verifyMs": 0.4694000000000642
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 6,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 37.1400000000001,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 30.45569999999998
+      },
+      "totalMs": 68,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 37.1400000000001,
+          "phases": {
+            "signMs": 0.24480000000005475,
+            "sendMs": 0.03530000000000655,
+            "waitMs": 36.58019999999999,
+            "verifyMs": 0.21479999999996835
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 30.45569999999998,
+          "phases": {
+            "signMs": 0.1127999999999929,
+            "sendMs": 0.01700000000005275,
+            "waitMs": 30.084600000000023,
+            "verifyMs": 0.2058999999999287
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 7,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 33.613500000000045,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 21.68760000000009
+      },
+      "totalMs": 56,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 33.613500000000045,
+          "phases": {
+            "signMs": 0.10929999999996198,
+            "sendMs": 0.017600000000015825,
+            "waitMs": 32.41210000000001,
+            "verifyMs": 1.0209999999999582
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 21.68760000000009,
+          "phases": {
+            "signMs": 0.546799999999962,
+            "sendMs": 0.08480000000008658,
+            "waitMs": 19.868099999999913,
+            "verifyMs": 1.04849999999999
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 8,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 31.977999999999952,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 29.218400000000088
+      },
+      "totalMs": 62,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.977999999999952,
+          "phases": {
+            "signMs": 0.5381999999999607,
+            "sendMs": 0.08719999999993888,
+            "waitMs": 29.825500000000034,
+            "verifyMs": 1.2994999999999663
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 29.218400000000088,
+          "phases": {
+            "signMs": 0.509900000000016,
+            "sendMs": 0.04079999999999018,
+            "waitMs": 27.46270000000004,
+            "verifyMs": 1.0277999999999565
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 9,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 36.09949999999992,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 15.03309999999999
+      },
+      "totalMs": 52,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 36.09949999999992,
+          "phases": {
+            "signMs": 0.2861000000000331,
+            "sendMs": 0.02869999999995798,
+            "waitMs": 34.7038,
+            "verifyMs": 0.9747999999999593
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 15.03309999999999,
+          "phases": {
+            "signMs": 0.6379000000000588,
+            "sendMs": 0.06329999999991287,
+            "waitMs": 13.32770000000005,
+            "verifyMs": 0.8880000000000337
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8313
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 10,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 14.35209999999995,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 33.90219999999999
+      },
+      "totalMs": 49,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 14.35209999999995,
+          "phases": {
+            "signMs": 0.4235999999999649,
+            "sendMs": 0.06929999999999836,
+            "waitMs": 13.158400000000029,
+            "verifyMs": 0.574100000000044
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 33.90219999999999,
+          "phases": {
+            "signMs": 0.2760000000000673,
+            "sendMs": 0.044399999999996,
+            "waitMs": 32.178999999999974,
+            "verifyMs": 1.285600000000045
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 11,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 33.32229999999993,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 31.966000000000008
+      },
+      "totalMs": 66,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 33.32229999999993,
+          "phases": {
+            "signMs": 0.838799999999992,
+            "sendMs": 0.08150000000000546,
+            "waitMs": 31.745000000000005,
+            "verifyMs": 0.44479999999998654
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.966000000000008,
+          "phases": {
+            "signMs": 0.22460000000000946,
+            "sendMs": 0.03139999999996235,
+            "waitMs": 30.801400000000058,
+            "verifyMs": 0.8275999999999613
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 12,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 17.11609999999996,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 28.46989999999994
+      },
+      "totalMs": 46,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 17.11609999999996,
+          "phases": {
+            "signMs": 0.28740000000004784,
+            "sendMs": 0.040599999999926695,
+            "waitMs": 15.028099999999995,
+            "verifyMs": 1.6480999999999995
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 28.46989999999994,
+          "phases": {
+            "signMs": 0.8605000000000018,
+            "sendMs": 0.1451999999999316,
+            "waitMs": 26.844900000000052,
+            "verifyMs": 0.3971000000000231
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 13,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 22.38689999999997,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 31.104600000000005
+      },
+      "totalMs": 54,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 22.38689999999997,
+          "phases": {
+            "signMs": 0.21500000000003183,
+            "sendMs": 0.02949999999998454,
+            "waitMs": 21.207700000000045,
+            "verifyMs": 0.8361999999999625
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.104600000000005,
+          "phases": {
+            "signMs": 0.25530000000003383,
+            "sendMs": 0.019900000000006912,
+            "waitMs": 30.018899999999917,
+            "verifyMs": 0.7399000000000342
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 14,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 14.860500000000002,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 18.22950000000003
+      },
+      "totalMs": 33,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 14.860500000000002,
+          "phases": {
+            "signMs": 0.23250000000007276,
+            "sendMs": 0.039499999999975444,
+            "waitMs": 13.847399999999993,
+            "verifyMs": 0.6685999999999694
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 18.22950000000003,
+          "phases": {
+            "signMs": 0.30760000000009313,
+            "sendMs": 0.04099999999993997,
+            "waitMs": 17.40980000000002,
+            "verifyMs": 0.3849999999999909
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 15,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 37.7192,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 28.65409999999997
+      },
+      "totalMs": 66,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 37.7192,
+          "phases": {
+            "signMs": 0.1933999999999969,
+            "sendMs": 0.015700000000038017,
+            "waitMs": 35.753200000000106,
+            "verifyMs": 1.5975999999998294
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 28.65409999999997,
+          "phases": {
+            "signMs": 0.6235000000001492,
+            "sendMs": 0.05420000000003711,
+            "waitMs": 27.02229999999986,
+            "verifyMs": 0.5135999999999967
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 16,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 31.983600000000024,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 38.78580000000011
+      },
+      "totalMs": 71,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.983600000000024,
+          "phases": {
+            "signMs": 0.23039999999991778,
+            "sendMs": 0.018700000000080763,
+            "waitMs": 30.65429999999992,
+            "verifyMs": 0.962099999999964
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 38.78580000000011,
+          "phases": {
+            "signMs": 0.4516000000000986,
+            "sendMs": 0.03489999999987958,
+            "waitMs": 36.83600000000001,
+            "verifyMs": 1.062400000000025
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 17,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 27.73680000000013,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 14.407300000000077
+      },
+      "totalMs": 43,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 27.73680000000013,
+          "phases": {
+            "signMs": 0.46049999999991087,
+            "sendMs": 0.03540000000020882,
+            "waitMs": 26.146299999999883,
+            "verifyMs": 0.8885999999999967
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 14.407300000000077,
+          "phases": {
+            "signMs": 0.4087000000001808,
+            "sendMs": 0.0385999999998603,
+            "waitMs": 13.219500000000153,
+            "verifyMs": 0.544399999999996
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 18,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 30.715000000000146,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 39.193899999999985
+      },
+      "totalMs": 70,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.715000000000146,
+          "phases": {
+            "signMs": 0.2459999999998672,
+            "sendMs": 0.018100000000004002,
+            "waitMs": 29.820899999999938,
+            "verifyMs": 0.5498000000000047
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 39.193899999999985,
+          "phases": {
+            "signMs": 0.24060000000008586,
+            "sendMs": 0.020399999999881402,
+            "waitMs": 37.75290000000018,
+            "verifyMs": 1.1026999999999134
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 19,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 28.435200000000123,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 31.147100000000137
+      },
+      "totalMs": 60,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 28.435200000000123,
+          "phases": {
+            "signMs": 0.4656999999999698,
+            "sendMs": 0.03340000000002874,
+            "waitMs": 27.39330000000018,
+            "verifyMs": 0.40639999999984866
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 31.147100000000137,
+          "phases": {
+            "signMs": 0.177599999999984,
+            "sendMs": 0.01269999999999527,
+            "waitMs": 30.499700000000075,
+            "verifyMs": 0.40229999999996835
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 20,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 21.348999999999933,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 15.445600000000013
+      },
+      "totalMs": 37,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 21.348999999999933,
+          "phases": {
+            "signMs": 0.18299999999999272,
+            "sendMs": 0.014400000000023283,
+            "waitMs": 20.854000000000042,
+            "verifyMs": 0.23630000000002838
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 15.445600000000013,
+          "phases": {
+            "signMs": 0.11429999999995744,
+            "sendMs": 0.016900000000077853,
+            "waitMs": 15.046100000000024,
+            "verifyMs": 0.23479999999995016
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 21,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 19.840599999999995,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 13.928100000000086
+      },
+      "totalMs": 34,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 19.840599999999995,
+          "phases": {
+            "signMs": 0.1169999999999618,
+            "sendMs": 0.016499999999950887,
+            "waitMs": 18.401200000000017,
+            "verifyMs": 1.2635999999999967
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 13.928100000000086,
+          "phases": {
+            "signMs": 0.49139999999988504,
+            "sendMs": 0.052700000000186265,
+            "waitMs": 12.018199999999979,
+            "verifyMs": 1.2406999999998334
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 22,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 50.299800000000005,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 34.01170000000002
+      },
+      "totalMs": 84,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 50.299800000000005,
+          "phases": {
+            "signMs": 0.5897999999999683,
+            "sendMs": 0.0727999999999156,
+            "waitMs": 49.16350000000011,
+            "verifyMs": 0.34829999999988104
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 34.01170000000002,
+          "phases": {
+            "signMs": 0.15489999999999782,
+            "sendMs": 0.02500000000009095,
+            "waitMs": 32.42800000000011,
+            "verifyMs": 1.3457999999998265
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 23,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 28.36940000000004,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 38.76039999999989
+      },
+      "totalMs": 67,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 28.36940000000004,
+          "phases": {
+            "signMs": 0.7026000000000749,
+            "sendMs": 0.05709999999999127,
+            "waitMs": 27.034599999999955,
+            "verifyMs": 0.4615000000001146
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 38.76039999999989,
+          "phases": {
+            "signMs": 0.21339999999986503,
+            "sendMs": 0.03350000000000364,
+            "waitMs": 37.365099999999984,
+            "verifyMs": 1.0843999999999596
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 24,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 32.05639999999994,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 28.32010000000014
+      },
+      "totalMs": 61,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 32.05639999999994,
+          "phases": {
+            "signMs": 0.5877000000000407,
+            "sendMs": 0.08770000000004075,
+            "waitMs": 29.683299999999917,
+            "verifyMs": 1.5685000000000855
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 28.32010000000014,
+          "phases": {
+            "signMs": 0.5385999999998603,
+            "sendMs": 0.0786000000000513,
+            "waitMs": 27.02150000000006,
+            "verifyMs": 0.4822999999998956
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 25,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 37.37339999999995,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 30.40190000000007
+      },
+      "totalMs": 68,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 37.37339999999995,
+          "phases": {
+            "signMs": 0.2582999999999629,
+            "sendMs": 0.038600000000087675,
+            "waitMs": 36.41789999999992,
+            "verifyMs": 0.5773999999998978
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 30.40190000000007,
+          "phases": {
+            "signMs": 0.23969999999985703,
+            "sendMs": 0.021700000000009823,
+            "waitMs": 29.812700000000177,
+            "verifyMs": 0.2841999999998279
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 26,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 49.49369999999999,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 22.216700000000174
+      },
+      "totalMs": 72,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 49.49369999999999,
+          "phases": {
+            "signMs": 0.1449999999999818,
+            "sendMs": 0.022400000000061482,
+            "waitMs": 47.83809999999994,
+            "verifyMs": 1.4197999999998956
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 22.216700000000174,
+          "phases": {
+            "signMs": 0.6898999999998523,
+            "sendMs": 0.1391000000000986,
+            "waitMs": 19.68209999999999,
+            "verifyMs": 1.512899999999945
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 27,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 43.022699999999986,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 38.46789999999987
+      },
+      "totalMs": 83,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 43.022699999999986,
+          "phases": {
+            "signMs": 0.8373999999998887,
+            "sendMs": 0.08320000000003347,
+            "waitMs": 41.64350000000013,
+            "verifyMs": 0.2825000000000273
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 38.46789999999987,
+          "phases": {
+            "signMs": 0.10320000000001528,
+            "sendMs": 0.016900000000077853,
+            "waitMs": 37.44920000000002,
+            "verifyMs": 0.8589999999999236
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 28,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 30.37200000000007,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 32.28910000000019
+      },
+      "totalMs": 63,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 30.37200000000007,
+          "phases": {
+            "signMs": 0.2806000000000495,
+            "sendMs": 0.02119999999990796,
+            "waitMs": 29.429600000000164,
+            "verifyMs": 0.5502999999998792
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 32.28910000000019,
+          "phases": {
+            "signMs": 0.25319999999987886,
+            "sendMs": 0.01700000000005275,
+            "waitMs": 30.9837,
+            "verifyMs": 0.9600000000000364
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "latency:sample",
+      "runIndex": 29,
+      "stepRtts": {
+        "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA": 31.023699999999963,
+        "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK": 52.011600000000044
+      },
+      "totalMs": 84,
+      "hops": [
+        {
+          "peerId": "12D3KooWJPR4FLbUcrQ2F6Bzj2VkvpNS6bqWCK9tBYpXypfrA9eA",
+          "blockStart": 0,
+          "blockEnd": 15,
+          "totalMs": 31.023699999999963,
+          "phases": {
+            "signMs": 0.4539999999999509,
+            "sendMs": 0.09819999999990614,
+            "waitMs": 28.663900000000012,
+            "verifyMs": 1.6835000000000946
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        },
+        {
+          "peerId": "12D3KooWQuLGhQsA9CdTK17cEEqjxjhFPsyxDfyzWuK3uCCUaLMK",
+          "blockStart": 16,
+          "blockEnd": 31,
+          "totalMs": 52.011600000000044,
+          "phases": {
+            "signMs": 0.32179999999993925,
+            "sendMs": 0.02250000000003638,
+            "waitMs": 50.95940000000019,
+            "verifyMs": 0.613399999999956
+          },
+          "protocol": "/opencoral/inference/4.0.0",
+          "wireBytes": 8314
+        }
+      ],
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "latency",
+      "mode": "sim"
+    },
+    {
+      "type": "suite:start",
+      "suite": "throughput",
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 234140.84507042257,
+      "tokensPerSec": 14.084507042253522,
+      "batchSize": 1,
+      "totalWireBytes": 16624,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 1078295.0819672132,
+      "tokensPerSec": 65.57377049180327,
+      "batchSize": 4,
+      "totalWireBytes": 65776,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 3695577.4647887326,
+      "tokensPerSec": 225.35211267605635,
+      "batchSize": 16,
+      "totalWireBytes": 262386,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 10384336.633663366,
+      "tokensPerSec": 633.6633663366337,
+      "batchSize": 64,
+      "totalWireBytes": 1048818,
+      "mode": "sim"
+    },
+    {
+      "type": "throughput:sample",
+      "bytesPerSec": 20561509.80392157,
+      "tokensPerSec": 1254.9019607843138,
+      "batchSize": 256,
+      "totalWireBytes": 4194548,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "throughput",
+      "mode": "sim"
+    },
+    {
+      "type": "suite:start",
+      "suite": "split-strategy",
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        16,
+        32
+      ],
+      "latencyMs": 54,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        20,
+        32
+      ],
+      "latencyMs": 67.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 2,
+      "partitionBoundaries": [
+        0,
+        12,
+        32
+      ],
+      "latencyMs": 63,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        8,
+        16,
+        24,
+        32
+      ],
+      "latencyMs": 119.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        10,
+        17,
+        24,
+        32
+      ],
+      "latencyMs": 126.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 4,
+      "partitionBoundaries": [
+        0,
+        7,
+        14,
+        22,
+        32
+      ],
+      "latencyMs": 119,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        4,
+        8,
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
+      ],
+      "latencyMs": 250,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        5,
+        8,
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
+      ],
+      "latencyMs": 232.5,
+      "mode": "sim"
+    },
+    {
+      "type": "heatmap:cell",
+      "nodeCount": 8,
+      "partitionBoundaries": [
+        0,
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27,
+        32
+      ],
+      "latencyMs": 235.5,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "split-strategy",
+      "mode": "sim"
+    },
+    {
+      "type": "suite:start",
+      "suite": "spec-pipe",
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.3,
+      "hops": 2,
+      "msPerToken": 15.055791562500008,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.3,
+      "hops": 2,
+      "msPerToken": 11.91319406250003,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.6,
+      "hops": 2,
+      "msPerToken": 15.028241249999997,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.6,
+      "hops": 2,
+      "msPerToken": 11.89284124999998,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.9,
+      "hops": 2,
+      "msPerToken": 15.033535937499995,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.9,
+      "hops": 2,
+      "msPerToken": 11.898445000000015,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.3,
+      "hops": 4,
+      "msPerToken": 30.098725312500004,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.3,
+      "hops": 4,
+      "msPerToken": 23.20771468749997,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.6,
+      "hops": 4,
+      "msPerToken": 30.021473749999974,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.6,
+      "hops": 4,
+      "msPerToken": 23.16251000000002,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.9,
+      "hops": 4,
+      "msPerToken": 30.05306375,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.9,
+      "hops": 4,
+      "msPerToken": 23.163172187500003,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.3,
+      "hops": 8,
+      "msPerToken": 60.05710593750005,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.3,
+      "hops": 8,
+      "msPerToken": 45.71755125000004,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.6,
+      "hops": 8,
+      "msPerToken": 60.07104937500012,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.6,
+      "hops": 8,
+      "msPerToken": 45.70653343750009,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 1,
+      "acceptanceRate": 0.9,
+      "hops": 8,
+      "msPerToken": 60.099666250000155,
+      "rollbacks": 0,
+      "mode": "sim"
+    },
+    {
+      "type": "specpipe:sample",
+      "pipelineDepth": 2,
+      "acceptanceRate": 0.9,
+      "hops": 8,
+      "msPerToken": 45.68008437500002,
+      "rollbacks": 10,
+      "mode": "sim"
+    },
+    {
+      "type": "suite:end",
+      "suite": "spec-pipe",
+      "mode": "sim"
+    },
+    {
+      "type": "done"
+    }
+  ],
+  "startedAt": "2026-06-14T17:05:30.562Z",
+  "finishedAt": "2026-06-14T17:08:44.329Z",
+  "config": {
+    "modelBlocks": 32,
+    "latencyMeanMs": 20,
+    "latencyJitterMs": 8
+  }
+}

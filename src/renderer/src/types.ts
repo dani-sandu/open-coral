@@ -184,7 +184,7 @@ export interface SessionPhaseEvent {
 
 export interface SessionInvalidationEvent {
   sessionId: string
-  reason: 'peer-drop' | 'model-change'
+  reason: 'peer-drop' | 'model-change' | 'hosting-change'
 }
 
 export type Unsubscribe = () => void

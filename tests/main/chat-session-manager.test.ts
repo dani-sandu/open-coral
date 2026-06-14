@@ -350,3 +350,145 @@ describe('ChatSessionManager — full-chain KV (Phase 6)', () => {
     expect(closed).toEqual(['p1'])
   })
 })
+
+describe('ChatSessionManager — hosting-change invalidation', () => {
+  it('invalidates active context when its chain had local steps', async () => {
+    const store = new SessionStore(dir)
+    await store.init()
+    await store.save({
+      schemaVersion: 1, id: 'h1', title: 'New chat',
+      createdAt: 1, updatedAt: 1, messages: [],
+    })
+    await store.flush()
+
+    const { runner } = makeMockRunner(256, 0)
+    const tokenizer = makeMockTokenizer(256, 0)
+    const invalidations: Array<{ sessionId: string; reason: string }> = []
+
+    const mgr = new ChatSessionManager(makeDeps({
+      store, getRunner: () => runner, getTokenizer: () => tokenizer,
+      getPlanner: () => ({
+        plan: async () => ({ localSteps: [{ blockStart: 0, blockEnd: 31 }], remoteSteps: [] }),
+        openRemoteKv: async () => [],
+      }),
+      emitInvalidation: (e) => { invalidations.push(e) },
+    }))
+
+    await mgr.openTurn('h1', 'hi', 4)
+    expect(mgr.hasActive()).toBe(true)
+
+    mgr.notifyHostingChanged()
+    await new Promise(r => setTimeout(r, 10))
+
+    expect(invalidations).toEqual([{ sessionId: 'h1', reason: 'hosting-change' }])
+    expect(mgr.hasActive()).toBe(false)
+  })
+
+  it('leaves purely remote sessions alone on hosting changes', async () => {
+    const store = new SessionStore(dir)
+    await store.init()
+    await store.save({
+      schemaVersion: 1, id: 'h2', title: 'New chat',
+      createdAt: 1, updatedAt: 1, messages: [],
+    })
+    await store.flush()
+
+    const { runner } = makeMockRunner(256, 0)
+    const tokenizer = makeMockTokenizer(256, 0)
+    const invalidations: Array<{ sessionId: string; reason: string }> = []
+    const fakeClient = makeFakeKvClient(256, 0)
+
+    const mgr = new ChatSessionManager(makeDeps({
+      store, getRunner: () => runner, getTokenizer: () => tokenizer,
+      getPlanner: () => ({
+        plan: async () => ({ localSteps: [], remoteSteps: [{ peerId: 'p1', blockStart: 0, blockEnd: 31 }] }),
+        openRemoteKv: async (steps) => steps.map(s => ({
+          peerId: s.peerId,
+          client: fakeClient as unknown as import('../../src/p2p/kv-protocol').KVSessionClient,
+          close: async () => {},
+        })),
+      }),
+      emitInvalidation: (e) => { invalidations.push(e) },
+    }))
+
+    await mgr.openTurn('h2', 'hi', 4)
+    mgr.notifyHostingChanged()
+    await new Promise(r => setTimeout(r, 10))
+
+    expect(invalidations).toEqual([])
+    expect(mgr.hasActive()).toBe(true)
+  })
+
+  it('wraps KVChain in PipelinedKVChain(depth=2) when remote steps exist', async () => {
+    const store = new SessionStore(dir)
+    await store.init()
+    await store.save({
+      schemaVersion: 1, id: 'pp1', title: 'New chat',
+      createdAt: 1, updatedAt: 1, messages: [],
+    })
+    await store.flush()
+
+    const { runner } = makeMockRunner(256, 0)
+    const tokenizer = makeMockTokenizer(256, 0)
+    const fakeClient = makeFakeKvClient(256, 0)
+
+    const mgr = new ChatSessionManager(makeDeps({
+      store, getRunner: () => runner, getTokenizer: () => tokenizer,
+      getPlanner: () => ({
+        plan: async () => ({
+          localSteps: [],
+          remoteSteps: [{ peerId: 'p1', blockStart: 0, blockEnd: 31 }],
+        }),
+        openRemoteKv: async (steps) => steps.map(s => ({
+          peerId: s.peerId,
+          client: fakeClient as unknown as import('../../src/p2p/kv-protocol').KVSessionClient,
+          close: async () => {},
+        })),
+      }),
+    }))
+
+    await mgr.openTurn('pp1', 'hi', 4)
+    expect(mgr.hasActive()).toBe(true)
+  })
+
+  it('rewrites planner "no peer found" into a user-actionable error', async () => {
+    const store = new SessionStore(dir)
+    await store.init()
+    await store.save({
+      schemaVersion: 1, id: 'h3', title: 'New chat',
+      createdAt: 1, updatedAt: 1, messages: [],
+    })
+    await store.flush()
+
+    const { runner } = makeMockRunner(256, 0)
+    const tokenizer = makeMockTokenizer(256, 0)
+    const phases: Array<{ phase: string; error?: string }> = []
+
+    const mgr = new ChatSessionManager(makeDeps({
+      store, getRunner: () => runner, getTokenizer: () => tokenizer,
+      getPlanner: () => ({
+        plan: async () => { throw new Error('No peer found for blocks starting at 0 (need 0..31)') },
+        openRemoteKv: async () => [],
+      }),
+      emitPhase: (e) => { phases.push({ phase: e.phase, error: e.error }) },
+    }))
+
+    let caught: unknown = null
+    try { await mgr.openTurn('h3', 'hi', 4) } catch (e) { caught = e }
+
+    expect((caught as Error).message).toMatch(/start hosting locally or wait for a peer/)
+    expect(phases.at(-1)?.phase).toBe('error')
+    expect(phases.at(-1)?.error).toMatch(/start hosting locally or wait for a peer/)
+  })
+
+  it('is a no-op when there is no active session', () => {
+    const store = new SessionStore(dir)
+    const invalidations: Array<{ sessionId: string; reason: string }> = []
+    const mgr = new ChatSessionManager(makeDeps({
+      store,
+      emitInvalidation: (e) => { invalidations.push(e) },
+    }))
+    expect(() => mgr.notifyHostingChanged()).not.toThrow()
+    expect(invalidations).toEqual([])
+  })
+})
