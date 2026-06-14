@@ -8,6 +8,7 @@ export type BenchmarkEvent =
   | { type: 'latency:sample'; runIndex: number; stepRtts: Record<string, number>; totalMs: number; hops?: HopTiming[]; mode: BenchmarkMode }
   | { type: 'throughput:sample'; bytesPerSec: number; tokensPerSec: number; batchSize: number; totalWireBytes: number; mode: BenchmarkMode }
   | { type: 'heatmap:cell'; nodeCount: number; partitionBoundaries: number[]; latencyMs: number; mode: BenchmarkMode }
+  | { type: 'specpipe:sample'; pipelineDepth: 1 | 2; acceptanceRate: number; hops: number; msPerToken: number; rollbacks: number; mode: BenchmarkMode }
   | { type: 'error'; suite: string; message: string; mode: BenchmarkMode }
   | { type: 'done' }
 

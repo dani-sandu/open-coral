@@ -57,7 +57,7 @@ Early development — this is an experimental rebuild, not a production system.
 - [x] **P2-9** Per-phase latency profiler — initiator-side sign / send / wait / verify breakdown per hop, surfaced via the harness (`sequence-manager.ts`, `inference-protocol.ts`)
 - [x] **P2-10** PEARL adaptive draft length — acceptance-EWMA-driven draft cap, output-preserving (`speculative-session.ts`)
 - [x] **P2-11** MARS margin-aware acceptance — accept plausible runner-ups within a margin of the top token, fewer rollbacks (`speculative-session.ts`)
-- [ ] **P2-12** SpecPipe pipeline-bubble elimination during speculation — overlap draft submission with verification across hops (`sequence-manager.ts`, `kv-chain.ts`)
+- [x] **P2-12** SpecPipe pipeline-bubble elimination during speculation — `PipelinedKVChain` wrapper + predict-and-pre-submit in `SpeculativeSession`; ~22% sim wall-clock win, default-on for chat with remote peers (`pipelined-kv-chain.ts`, `speculative-session.ts`, `chat-session-manager.ts`)
 
 ### Phase 3
 - [ ] **P3-1** Prefill/decode role separation + chunked prefill — disaggregated pipeline, pull-based KV transfer

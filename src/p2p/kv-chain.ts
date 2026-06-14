@@ -15,8 +15,8 @@ export class SessionPoisonedError extends Error {
 }
 
 export class KVChain implements VerificationBackend {
-  private readonly embedder: Embedder
-  private readonly clients: KVSessionClient[]
+  readonly embedder: Embedder
+  readonly clients: KVSessionClient[]
   readonly vocabSize: number
   nPast = 0
 

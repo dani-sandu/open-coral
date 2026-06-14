@@ -217,7 +217,7 @@ export class ChatSessionManager {
       backend,
       tokenizer.eosTokenId,
       tokenizer.endOfTurnTokenId,
-      DEFAULT_SPEC_CONFIG,
+      { ...DEFAULT_SPEC_CONFIG, pipelineDepth: 2 },
       tokenizer.thinkTokens,
     )
 
@@ -386,14 +386,14 @@ async function buildBackend(
   if (remoteKvHandles.length === 0) {
     return new LocalVerificationBackend(runner, kvSessionId)
   }
-  // Stateless local embedder. Lazy-import KVChain so test mocks for the manager
-  // don't have to satisfy KVChain's own dependencies.
   const embedder = {
     nEmbd: runner.hiddenSize,
     embed: (ids: Int32Array) => runner.embedTokens(ids),
   }
   const { KVChain } = await import('../p2p/kv-chain')
-  return new KVChain(embedder, remoteKvHandles.map(h => h.client), vocabSize)
+  const { PipelinedKVChain } = await import('../p2p/pipelined-kv-chain')
+  const chain = new KVChain(embedder, remoteKvHandles.map(h => h.client), vocabSize)
+  return new PipelinedKVChain(chain, 2)
 }
 
 function longestCommonPrefix(a: Int32Array, b: Int32Array): number {

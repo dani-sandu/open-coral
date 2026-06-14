@@ -24,6 +24,14 @@ interface HeatmapRow {
   meanLatencyMs: number
 }
 
+interface SpecPipeRow {
+  hops: number
+  acceptanceRate: number
+  pipelineDepth: 1 | 2
+  msPerToken: number
+  rollbacks: number
+}
+
 interface BaselineSummary {
   path: string
   startedAt: string
@@ -34,6 +42,7 @@ interface BaselineSummary {
   latency: LatencyStats
   throughput: ThroughputRow[]
   heatmap: HeatmapRow[]
+  specPipe: SpecPipeRow[]
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -118,6 +127,19 @@ function summarise(path: string): BaselineSummary {
       meanLatencyMs: b.latencyMs.reduce((a, x) => a + x, 0) / b.latencyMs.length,
     }))
 
+  // SpecPipe
+  const sp: SpecPipeRow[] = []
+  for (const e of events) {
+    if (e.type !== 'specpipe:sample') continue
+    sp.push({
+      hops: e.hops,
+      acceptanceRate: e.acceptanceRate,
+      pipelineDepth: e.pipelineDepth,
+      msPerToken: e.msPerToken,
+      rollbacks: e.rollbacks,
+    })
+  }
+
   return {
     path,
     startedAt: result.startedAt,
@@ -128,6 +150,7 @@ function summarise(path: string): BaselineSummary {
     latency,
     throughput,
     heatmap,
+    specPipe: sp,
   }
 }
 
@@ -202,6 +225,25 @@ function printCompare(A: BaselineSummary, B: BaselineSummary): void {
     const bMs = b ? fmt(b.meanLatencyMs) : '—'
     const dPct = a && b ? pct(a.meanLatencyMs, b.meanLatencyMs) : '   —  '
     console.log(`  ${nc.padStart(2)} / ${p.padStart(2)}        ${aMs.padStart(7)}     ${bMs.padStart(7)}     ${dPct.padStart(7)}`)
+  }
+
+  if (A.specPipe.length > 0 || B.specPipe.length > 0) {
+    console.log()
+    console.log('--- SpecPipe: msPerToken by (hops, acceptance, depth) ---')
+    const keys = [...new Set([
+      ...A.specPipe.map(r => `${r.hops}/${r.acceptanceRate}/${r.pipelineDepth}`),
+      ...B.specPipe.map(r => `${r.hops}/${r.acceptanceRate}/${r.pipelineDepth}`),
+    ])].sort()
+    console.log('hops/accept/depth     A ms/tok    B ms/tok    Δ')
+    for (const key of keys) {
+      const [h, ar, d] = key.split('/')
+      const a = A.specPipe.find(r => `${r.hops}/${r.acceptanceRate}/${r.pipelineDepth}` === key)
+      const b = B.specPipe.find(r => `${r.hops}/${r.acceptanceRate}/${r.pipelineDepth}` === key)
+      const aMs = a ? fmt(a.msPerToken) : '—'
+      const bMs = b ? fmt(b.msPerToken) : '—'
+      const dPct = a && b ? pct(a.msPerToken, b.msPerToken) : '   —  '
+      console.log(`  ${h.padStart(2)} / ${ar.padStart(4)} / ${d.padStart(1)}      ${aMs.padStart(7)}     ${bMs.padStart(7)}     ${dPct.padStart(7)}`)
+    }
   }
 }
 

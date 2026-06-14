@@ -18,14 +18,14 @@ describe('parseArgs', () => {
 })
 
 describe('runSimBenchmark', () => {
-  it('runs all three suites and ends with a done event', async () => {
+  it('runs all four suites and ends with a done event', async () => {
     const events: BenchmarkEvent[] = []
     await runSimBenchmark(
       { mode: 'sim', modelBlocks: 8, nodes: [2, 4], runs: 3, latencyMeanMs: 1, latencyJitterMs: 0, port: 0 },
       e => events.push(e),
     )
     const suiteStarts = events.filter(e => e.type === 'suite:start').map(e => (e as any).suite).sort()
-    expect(suiteStarts).toEqual(['latency', 'split-strategy', 'throughput'])
+    expect(suiteStarts).toEqual(['latency', 'spec-pipe', 'split-strategy', 'throughput'])
     expect(events[events.length - 1]).toMatchObject({ type: 'done' })
-  })
+  }, 30000)
 })

@@ -8,6 +8,7 @@ import { generatePartitions } from './suites/partitions'
 import { runLatencySuite } from './suites/latency'
 import { runThroughputSuite } from './suites/throughput'
 import { runSplitStrategySuite } from './suites/split-strategy'
+import { runSpecPipeSuite } from './suites/spec-pipe'
 import type { BenchmarkEvent, EventSink } from './types'
 
 export interface CliConfig {
@@ -77,6 +78,14 @@ export async function runSimBenchmark(cfg: CliConfig, sink: EventSink): Promise<
       client, workers, identity,
       modelBlocks: cfg.modelBlocks, hiddenSize,
       nodeCounts: cfg.nodes, runsPerCell: 10, sink,
+    })
+    await runSpecPipeSuite({
+      hops: cfg.nodes,
+      acceptanceRates: [0.3, 0.6, 0.9],
+      pipelineDepths: [1, 2],
+      runsPerCell: cfg.runs >= 30 ? 10 : 3,
+      simHopLatencyMs: cfg.latencyMeanMs,
+      sink,
     })
 
     sink({ type: 'done' })

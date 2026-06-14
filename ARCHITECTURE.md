@@ -23,7 +23,7 @@ IPC entry point, model loading, chat session lifecycle, and HuggingFace integrat
 | `index.ts` | IPC entry point and process lifecycle |
 | `block-host.ts` | Loads the local model slice, drives inference; owns the persistent `SequenceManager` (P2-5 routing-refresh) |
 | `inference-orchestrator.ts` | Single-prompt runner: tokenize → speculative generate → result |
-| `chat-session-manager.ts` | Manages active sessions: KV open, prefill, decode loop, resume |
+| `chat-session-manager.ts` | Manages active sessions: KV open, prefill, decode loop, resume. Wraps `KVChain` in `PipelinedKVChain(depth=2)` for distributed sessions (P2-12). Invalidates active context on hosting change so a stale plan can't outlive its host. |
 | `chat-session-ipc.ts` | IPC wiring; keeps Electron imports out of the manager core |
 | `session-store.ts` | Persists chat sessions as JSON with a debounced write index |
 | `kv-session-registry.ts` | Tracks open KV sessions for remote peers (serve side) |
@@ -38,7 +38,7 @@ Pure compute layer — no I/O, no networking. Runs in a worker thread to keep th
 | File | Role |
 |---|---|
 | `native-worker.ts` | Worker-thread wrapper; all GPU calls go through here |
-| `speculative-session.ts` | n-gram draft + verification loop (speculative decoding) |
+| `speculative-session.ts` | n-gram draft + verification loop (speculative decoding); MARS margin-aware accept (P2-11), PEARL adaptive draft length (P2-10), SpecPipe predict-and-pre-submit when `pipelineDepth=2` (P2-12) |
 | `ngram-cache.ts` | Rolling n-gram table for cheap draft prediction |
 | `sequence-manager.ts` | Plans the block chain: local steps + remote peer steps |
 | `block-runner.ts` | Executes a local transformer block range |
@@ -57,9 +57,10 @@ Peer discovery, block registration, and remote tensor forwarding over libp2p.
 | `node.ts` | libp2p node: TCP + Noise + Yamux + Kademlia DHT |
 | `dht.ts` | Peer presence and per-block content routing |
 | `block-registry.ts` | Periodically re-announces the local block range to the DHT |
-| `kv-protocol.ts` | Remote KV-cache session protocol (open / forward / close) |
-| `kv-chain.ts` | Chains multiple KVSessionClients into a single VerificationBackend |
-| `inference-protocol.ts` | Signed tensor forwarding protocol (v2) |
+| `kv-protocol.ts` | Remote KV-cache session protocol `/opencoral/kv/2.0.0` (open / forward / forwardAll / rollback / close); per-stream FIFO at the peer |
+| `kv-chain.ts` | Chains multiple `KVSessionClient`s sequentially into a single `VerificationBackend`; compensating rollback on partial-chain failure |
+| `pipelined-kv-chain.ts` | P=2 optimistic SpecPipe wrapper over `KVChain` — per-hop tail promises let step N+1 occupy hop 0 while step N is at hop 1+ (P2-12) |
+| `inference-protocol.ts` | Signed tensor forwarding; V3 (`/opencoral/inference/3.0.0`, fp32) + V4 (`/opencoral/inference/4.0.0`, fp16 — P2-1) negotiated via libp2p multistream-select; initiator-side phase profiling (sign / send / wait / verify) for P2-9 |
 | `model-announce.ts` | Peer metadata and block-range exchange |
 | `discovered-models.ts` | Tracks known remote peers and their block ranges |
 | `peer-latency.ts` | EWMA round-trip latency per peer |
@@ -93,6 +94,7 @@ sequenceDiagram
     participant IPC as ChatSessionIPC
     participant Mgr as ChatSessionManager
     participant SM as SequenceManager
+    participant PKVC as PipelinedKVChain
     participant KVC as KVChain
     participant Spec as SpeculativeSession
     participant NGC as NgramCache
@@ -103,21 +105,23 @@ sequenceDiagram
     Chat->>IPC: opencoral:send-turn
     IPC->>Mgr: openTurn(sessionId, text)
 
-    Mgr->>SM: plan() → local + remote steps
+    Mgr->>SM: getCachedChain() ?? plan() → local + remote steps
     SM-->>Mgr: chain plan
 
     Mgr->>KVP: openRemoteSession() per remote peer
-    KVP->>Peers: /opencoral/kv/1.0.0 open
+    KVP->>Peers: /opencoral/kv/2.0.0 open
     Peers-->>KVP: session ack
 
-    Mgr->>KVC: create KVChain(embedder, KVSessionClients)
-    Mgr->>Spec: create SpeculativeSession(KVChain backend)
+    Mgr->>KVC: new KVChain(embedder, KVSessionClients)
+    Mgr->>PKVC: wrap KVChain in PipelinedKVChain(depth=2)
+    Mgr->>Spec: new SpeculativeSession(PipelinedKVChain backend, pipelineDepth=2)
 
     rect rgb(30, 60, 100)
         Note over Mgr,Peers: Prefill — full prompt context
-        Spec->>KVC: forwardAll(promptIds)
+        Spec->>PKVC: forwardAll(promptIds)
+        PKVC->>KVC: forwardAll (depth=1 passthrough on first call)
         KVC->>KVC: embed tokens locally
-        loop each remote KVSessionClient
+        loop each remote KVSessionClient (per-hop FIFO)
             KVC->>Peers: forward hidden state chunk
             Peers-->>KVC: updated hidden state
         end
@@ -125,14 +129,21 @@ sequenceDiagram
     end
 
     rect rgb(30, 80, 50)
-        Note over Mgr,Peers: Decode — per-token with speculative drafts
+        Note over Mgr,Peers: Decode — speculative batches with SpecPipe overlap
         loop until EOS or maxTokens
-            Spec->>NGC: propose draft tokens (n-gram)
+            Spec->>NGC: lookup drafts for [allTokens]
             NGC-->>Spec: draft sequence
-            Spec->>KVC: verify drafts via forwardOne / rollback
-            KVC->>Peers: forward single token
-            Peers-->>KVC: logits
-            Spec->>Spec: accept / reject drafts, sample next token
+            Spec->>PKVC: forwardAll([nextToken, ...drafts]) for step N
+            Note over Spec,PKVC: predict bonus via ngram; pre-submit step N+1 BEFORE awaiting N
+            Spec->>PKVC: forwardAll([predictedBonus, ...predicted drafts]) for step N+1
+            par chain pipelining
+                PKVC->>Peers: step N traverses hop 0 → 1 → 2 → 3
+            and
+                PKVC->>Peers: step N+1 enters hop 0 once N clears it
+            end
+            PKVC-->>Spec: step N logits (then step N+1 logits)
+            Spec->>Spec: MARS accept / reject; sample bonus token
+            Spec->>Spec: if prediction matched, reuse pending; else discard + rollback
         end
     end
 
@@ -152,8 +163,8 @@ flowchart TD
         MA["ModelAnnounce\npeer metadata exchange"]
         DM["DiscoveredModels\npeer → block-range map"]
         PL["PeerLatencyTracker\nEWMA round-trip"]
-        KVP["KVProtocol\nremote session host/client"]
-        IP["InferenceProtocol v2\nsigned tensor forwarding"]
+        KVP["KVProtocol /opencoral/kv/2.0.0\nremote session host/client"]
+        IP["InferenceProtocol V3+V4\nfp32/fp16 signed tensors, negotiated"]
         NI["NetworkInspector\ntopology + stats → UI"]
     end
 
@@ -176,9 +187,9 @@ flowchart TD
     DM --> PL
     PL -->|"latency-ranked chain"| KVP
 
-    KVP <-->|"/opencoral/kv/1.0.0\nopen · forward · close"| PA
-    KVP <-->|"/opencoral/kv/1.0.0\nopen · forward · close"| PB
-    IP <-->|"signed tensors v2"| PA
-    IP <-->|"signed tensors v2"| PB
+    KVP <-->|"/opencoral/kv/2.0.0\nopen · forward · forwardAll · rollback · close"| PA
+    KVP <-->|"/opencoral/kv/2.0.0\nopen · forward · forwardAll · rollback · close"| PB
+    IP <-->|"V4 fp16 (negotiated) / V3 fp32 fallback"| PA
+    IP <-->|"V4 fp16 (negotiated) / V3 fp32 fallback"| PB
     NI -->|"IPC stats"| UI["Renderer — NetworkView"]
 ```

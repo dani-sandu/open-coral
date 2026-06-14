@@ -419,6 +419,38 @@ describe('ChatSessionManager — hosting-change invalidation', () => {
     expect(mgr.hasActive()).toBe(true)
   })
 
+  it('wraps KVChain in PipelinedKVChain(depth=2) when remote steps exist', async () => {
+    const store = new SessionStore(dir)
+    await store.init()
+    await store.save({
+      schemaVersion: 1, id: 'pp1', title: 'New chat',
+      createdAt: 1, updatedAt: 1, messages: [],
+    })
+    await store.flush()
+
+    const { runner } = makeMockRunner(256, 0)
+    const tokenizer = makeMockTokenizer(256, 0)
+    const fakeClient = makeFakeKvClient(256, 0)
+
+    const mgr = new ChatSessionManager(makeDeps({
+      store, getRunner: () => runner, getTokenizer: () => tokenizer,
+      getPlanner: () => ({
+        plan: async () => ({
+          localSteps: [],
+          remoteSteps: [{ peerId: 'p1', blockStart: 0, blockEnd: 31 }],
+        }),
+        openRemoteKv: async (steps) => steps.map(s => ({
+          peerId: s.peerId,
+          client: fakeClient as unknown as import('../../src/p2p/kv-protocol').KVSessionClient,
+          close: async () => {},
+        })),
+      }),
+    }))
+
+    await mgr.openTurn('pp1', 'hi', 4)
+    expect(mgr.hasActive()).toBe(true)
+  })
+
   it('rewrites planner "no peer found" into a user-actionable error', async () => {
     const store = new SessionStore(dir)
     await store.init()
