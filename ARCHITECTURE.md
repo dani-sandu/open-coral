@@ -133,17 +133,17 @@ sequenceDiagram
         loop until EOS or maxTokens
             Spec->>NGC: lookup drafts for [allTokens]
             NGC-->>Spec: draft sequence
-            Spec->>PKVC: forwardAll([nextToken, ...drafts]) for step N
-            Note over Spec,PKVC: predict bonus via ngram; pre-submit step N+1 BEFORE awaiting N
-            Spec->>PKVC: forwardAll([predictedBonus, ...predicted drafts]) for step N+1
+            Spec->>PKVC: forwardAll([nextToken, ...drafts]) for current step
+            Note over Spec,PKVC: predict bonus via ngram; pre-submit next step BEFORE awaiting current
+            Spec->>PKVC: forwardAll([predictedBonus, ...predicted drafts]) for next step
             par chain pipelining
-                PKVC->>Peers: step N traverses hop 0 → 1 → 2 → 3
+                PKVC->>Peers: current step traverses hop 0 to hop 3
             and
-                PKVC->>Peers: step N+1 enters hop 0 once N clears it
+                PKVC->>Peers: next step enters hop 0 once current clears it
             end
-            PKVC-->>Spec: step N logits (then step N+1 logits)
+            PKVC-->>Spec: current step logits, then next step logits
             Spec->>Spec: MARS accept / reject; sample bonus token
-            Spec->>Spec: if prediction matched, reuse pending; else discard + rollback
+            Spec->>Spec: if prediction matched, reuse pending; else discard and rollback
         end
     end
 
