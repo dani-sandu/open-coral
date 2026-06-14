@@ -134,7 +134,7 @@ sequenceDiagram
             Spec->>NGC: lookup drafts for [allTokens]
             NGC-->>Spec: draft sequence
             Spec->>PKVC: forwardAll([nextToken, ...drafts]) for current step
-            Note over Spec,PKVC: predict bonus via ngram; pre-submit next step BEFORE awaiting current
+            Note over Spec,PKVC: predict bonus via ngram — pre-submit next step BEFORE awaiting current
             Spec->>PKVC: forwardAll([predictedBonus, ...predicted drafts]) for next step
             par chain pipelining
                 PKVC->>Peers: current step traverses hop 0 to hop 3
@@ -142,8 +142,8 @@ sequenceDiagram
                 PKVC->>Peers: next step enters hop 0 once current clears it
             end
             PKVC-->>Spec: current step logits, then next step logits
-            Spec->>Spec: MARS accept / reject; sample bonus token
-            Spec->>Spec: if prediction matched, reuse pending; else discard and rollback
+            Spec->>Spec: MARS accept or reject, then sample bonus token
+            Spec->>Spec: reuse pending on prediction match, else discard and rollback
         end
     end
 
