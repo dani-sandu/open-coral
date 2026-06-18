@@ -12,7 +12,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED_LLAMA ON)
 FetchContent_Declare(
   llama
   GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-  GIT_TAG        b8233
+  GIT_TAG        b9704
   GIT_SHALLOW    TRUE
   GIT_PROGRESS   TRUE
   PATCH_COMMAND

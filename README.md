@@ -48,8 +48,8 @@ Early development — this is an experimental rebuild, not a production system.
 - [x] **P2-0** Simulation benchmark harness — drives the real `SequenceManager`/V3 protocol over an in-process transport, no model required (`tools/benchmark/`)
 - [x] **P2-1** Float16 hidden-state wire format — ~2× wire-size reduction per hop via new V4 protocol + V3 fallback (`inference-protocol.ts`, `float16.ts`)
 - [x] **P2-2** Pre-dial next peer during compute — overlap handshakes with compute, ~1 handshake on the critical path (`sequence-manager.ts`)
-- [ ] **P2-3** Zero-copy input tensor transfer — remove memcpy on every forward call (`native-worker.ts`)
-- [ ] **P2-4** FlashAttention compile flag — ~2× prefill speedup on long contexts (build config)
+- [x] **P2-3** Zero-copy input tensor transfer — `forward`/`sessionForward` hidden-state input buffers added to the worker `postMessage` transfer list (full-span views only; token-id arrays excluded to protect SpecPipe reuse/subarray callers), removing a `nTokens × hiddenSize × 4` memcpy per call (`native-worker.ts`)
+- [~] **P2-4** FlashAttention — enabled via `cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO` in `llama_block_context.cpp` (upstream made FA runtime-selectable, replacing the old compile-time flag); compiles green against llama.cpp b9704. ~2× prefill speedup on long contexts still pending a real-model run to confirm.
 - [x] **P2-5** Background routing table refresh — persistent `SequenceManager` in `block-host`/`index`, refresh timer keeps the chain plan warm and removes DHT from the inference hot path (`sequence-manager.ts`, `block-host.ts`)
 - [ ] **P2-6** StreamingLLM KV eviction policy — constant KV memory regardless of conversation length (`kv-session-registry.ts`)
 - [ ] **P2-7** NgramCache cleanup on session end — reduce GC pressure on long sessions (`speculative-session.ts`)

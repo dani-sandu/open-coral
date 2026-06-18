@@ -235,8 +235,8 @@ int llama_context::project_hidden_to_logits(const llama_batch & batch_inp, const
 
     // Skip all transformer layers, keep norm + lm_head.
     const auto saved = coral_opts_;
-    coral_opts_.block_start  = (int32_t)model.hparams.n_layer; // il_start >= il_end => no layers
-    coral_opts_.block_end    = (int32_t)model.hparams.n_layer - 1;
+    coral_opts_.block_start  = (int32_t)model.hparams.n_layer(); // il_start >= il_end => no layers
+    coral_opts_.block_end    = (int32_t)model.hparams.n_layer() - 1;
     coral_opts_.skip_norm    = false;
     coral_opts_.skip_lm_head = false;
 
@@ -332,7 +332,7 @@ coral_replace("src/models/llama.cpp"
 
     if constexpr (!embed) {
         // lm_head
-        cur = build_lora_mm(model.output, cur);
+        cur = build_lora_mm(model.output, cur, model.output_s);
 
         cb(cur, \"result_output\", -1);
         res->t_logits = cur;
@@ -355,7 +355,7 @@ coral_replace("src/models/llama.cpp"
     if constexpr (!embed) {
         if (!coral_skip_lm_head) {
             // lm_head
-            cur = build_lora_mm(model.output, cur);
+            cur = build_lora_mm(model.output, cur, model.output_s);
 
             cb(cur, \"result_output\", -1);
             res->t_logits = cur;

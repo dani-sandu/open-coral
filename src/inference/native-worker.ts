@@ -31,6 +31,45 @@ interface PendingCall {
   reject: (error: Error) => void
 }
 
+/**
+ * Ops whose large hidden-state input tensor is single-use and therefore safe to
+ * hand to the worker via the postMessage transfer list (zero-copy) instead of a
+ * structured-clone copy. P2-3.
+ *
+ * Deliberately excludes the `sessionDecode*` ops: SpeculativeSession reuses and
+ * subarrays the token-id arrays it passes (the SpecPipe pre-submit re-reads
+ * `batch` after `forwardAll`, and the re-prefill fallback passes
+ * `acceptedTokens.subarray(...)`), so detaching those buffers would corrupt the
+ * caller. Those arrays are tiny anyway — the memcpy worth removing is the
+ * `nTokens × hiddenSize × 4` byte hidden state on `forward` / `sessionForward`.
+ */
+const TRANSFERABLE_INPUT_OPS = new Set(['runForward', 'sessionForward'])
+
+/**
+ * Collect the input ArrayBuffers that are safe to transfer (detach) to the
+ * worker for a given op. Only full-span views are transferred: a subarray
+ * shares its backing buffer with data the caller still needs, and transferring
+ * it would detach all of that buffer. Returns a deduplicated list.
+ */
+export function collectInputTransfers(op: string, args: unknown[]): ArrayBuffer[] {
+  if (!TRANSFERABLE_INPUT_OPS.has(op)) return []
+  const transfers: ArrayBuffer[] = []
+  for (const arg of args) {
+    if (!ArrayBuffer.isView(arg)) continue
+    const view = arg as ArrayBufferView
+    const buf = view.buffer
+    if (
+      buf instanceof ArrayBuffer &&
+      view.byteOffset === 0 &&
+      view.byteLength === buf.byteLength &&
+      !transfers.includes(buf)
+    ) {
+      transfers.push(buf)
+    }
+  }
+  return transfers
+}
+
 type AsyncBlockRunnerBase = {
   blockStart: number
   blockEnd: number
@@ -82,7 +121,8 @@ export class AsyncBlockRunner {
     return new Promise((resolve, reject) => {
       const id = this.nextId++
       this.pending.set(id, { resolve, reject })
-      this.worker.postMessage({ id, op, args })
+      const transfer = collectInputTransfers(op, args)
+      this.worker.postMessage({ id, op, args }, transfer)
     })
   }
 

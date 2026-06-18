@@ -37,6 +37,19 @@ static LlamaBlockContext* lbc_load_internal(
     cp.n_threads       = g_n_threads;
     cp.n_threads_batch = g_n_threads;
     cp.offload_kqv     = false;
+    // [open-coral] P2-4: enable Flash Attention. FA-2 auto-activates on supported
+    // back-ends; llama.cpp emits a warning and falls back on unsupported models, so
+    // AUTO is safe with the "any GGUF" value prop. Upstream made FA runtime-selectable
+    // (b9704), so this replaces the old compile-time LLAMA_FLASH_ATTN cmake flag.
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    // [open-coral] Recurrent/hybrid archs (e.g. Qwen3.5) keep no per-token KV, so by
+    // default (n_rs_seq=0) partial KV rollback fails and lbc_session_rollback must
+    // clear+re-prefill and disable speculation. b9704 added a per-token recurrent-state
+    // snapshot ring (bounded by n_rs_seq) that makes partial rollback possible. Size it
+    // above the speculative draft batch (DEFAULT_SPEC_CONFIG.draftMax=5 => batch<=6) so
+    // every spec rollback fits. llama.cpp clamps this to 0 for archs without rollback
+    // support (llm_arch_supports_rs_rollback), so it's a no-op for plain transformers.
+    cp.n_rs_seq        = 8;
     // embeddings=true makes llama_context store per-token embeddings after each decode,
     // which is required for get_embeddings_ith() in the patch 2 I/O functions.
     // Trade-off: slight overhead per batch vs. standard decode mode; unavoidable here.
